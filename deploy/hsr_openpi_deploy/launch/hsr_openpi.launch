@@ -1,0 +1,56 @@
+<?xml version="1.0"?>
+<launch>
+    <arg name="config_name" default="pi0_hsr_low_mem_finetune"/>
+    <arg name="config_yaml" default=""/>
+    <arg name="checkpoint_dir" default="/home/openpi/checkpoints/pi0_hsr_low_mem_finetune/hsr_tmc_new/15000"/>
+    <arg name="update_freq" default="10"/>
+    <arg name="adopted_action_chunks" default="10"/>
+    <arg name="upsample" default="true"/>
+    <arg name="upsample_hz" default="100"/>
+    <arg name="upsample_method" default="spline"/>
+    <arg name="action_smoothing" default="ema"/>
+    <arg name="ema_alpha" default="0.2"/>
+    <arg name="ma_window" default="5"/>
+    <arg name="smooth_gripper" default="false"/>
+    <arg name="smooth_base" default="false"/>
+    <arg name="gripper_mode" default="hybrid"/>
+    <arg name="save_exec_trace" default="false"/>
+
+
+    <rosparam file="$(find hsr_data_collection)/config/hsr_data_collection_config.yaml" command="load"/>
+
+    <!-- NOTE: If rosbag_manager is started within HSR, please comment out the following rosbag_manager node-->
+    <node name="rosbag_manager" pkg="hsr_data_collection" type="rosbag_manager.py" output="screen">
+    </node>
+
+    <node name="status_led_manager" pkg="hsr_data_collection" type="status_led_manager.py" output="screen">
+    </node>
+    
+    <!-- <node name="joy" pkg="joy" type="joy_node" output="screen">
+        <remap from="/joy" to="/hsrb/joy"/>
+    </node> -->
+
+    <node name="dualshock_teleop_interface" pkg="hsr_data_collection" type="dualshock_interface.py" output="screen">
+        <param name="init_instruction" value=""/>
+        <param name="use_spacemouse" value="false"/>
+    </node>
+
+    <node name="hsr_openpi" pkg="hsr_openpi" type="hsr_openpi.py" output="screen">
+        <param name="config_name" value="$(arg config_name)"/>
+        <param name="config_yaml" value="$(arg config_yaml)"/>
+        <param name="checkpoint_dir" value="$(arg checkpoint_dir)"/>
+        <param name="adopted_action_chunks" value="$(arg adopted_action_chunks)"/>
+        <param name="update_freq" value="$(arg update_freq)"/>
+        <param name="upsample" value="$(arg upsample)"/>
+        <param name="upsample_hz" value="$(arg upsample_hz)"/>
+        <param name="upsample_method" value="$(arg upsample_method)"/>
+        <param name="action_smoothing" value="$(arg action_smoothing)"/>
+        <param name="ema_alpha" value="$(arg ema_alpha)"/>
+        <param name="ma_window" value="$(arg ma_window)"/>
+        <param name="smooth_gripper" value="$(arg smooth_gripper)"/>
+        <param name="smooth_base" value="$(arg smooth_base)"/>
+        <param name="gripper_mode" value="$(arg gripper_mode)"/>
+        <param name="save_exec_trace" value="$(arg save_exec_trace)"/>
+    </node>
+
+</launch>

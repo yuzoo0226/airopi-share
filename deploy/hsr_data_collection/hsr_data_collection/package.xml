@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>hsr_data_collection</name>
+  <version>0.0.0</version>
+  <description>The hsr_data_collection package</description>
+  <maintainer email="jumpei_arima@mail.toyota.co.jp">jumpei arima</maintainer>
+  <license>TODO</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+  <depend>rospy</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>tmc_msgs</depend>
+  <depend>hsr_data_msgs</depend>
+
+</package>

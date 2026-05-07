@@ -1,0 +1,74 @@
+experiment:
+  name: example_base
+  project_name: openpi
+  seed: 42
+  wandb_enabled: true
+
+dataset:
+  repo_id: lerobot_datasets/<your_dataset>
+  data_dir: /path/to/lerobot_datasets/<your_dataset>
+  assets_dir: ./assets/example_base
+  asset_id: lerobot_datasets/<your_dataset>
+  prompt_from_task: true
+  action_mode: relative
+  fast_lerobot: true
+  lerobot_backend: parquet
+  lerobot_checks: none
+  video_backend: torchcodec
+  adapt_to_pi: true
+  convert_gripper: false
+  base_action_dim: 3
+
+model:
+  type: pi05
+  paligemma_variant: gemma_2b
+  action_expert_variant: gemma_300m
+  action_dim: 32
+  action_horizon: 16
+
+training:
+  batch_size: 64
+  pin_memory: true
+  prefetch_factor: 4
+  num_train_steps: 350000
+  val_split_fraction: 0.1
+  val_split_seed: 42
+  eval_interval: 1000
+  eval_num_batches: 20
+  eval_num_sample_steps: 10
+  save_interval: 1000
+  keep_period: 50000
+  log_interval: 100
+  lr_schedule:
+    type: cosine_decay
+    warmup_steps: 1000
+    peak_lr: 2.5e-5
+    decay_steps: 350000
+    decay_lr: 2.5e-6
+
+gpu:
+  num_gpus: 8  # 1 node x 8 GPUs
+  base_gpus: 8
+  fsdp_devices: 1
+
+scaling:
+  base_batch_size: 32
+  scale_batch_size: false
+  scale_learning_rate: true
+  scale_train_steps: false
+  workers_per_gpu: 1
+
+task_sampler:
+  kind: uniform
+  alpha: 1.0
+  ema_decay: 0.9
+  min_prob: 0.0
+  eps: 1.0e-6
+
+weight_loader:
+  type: checkpoint
+  # params_path: /path/to/pretrained/params
+
+checkpoints:
+  base_model:
+    pi05: gs://openpi-assets/checkpoints/pi05_base/params

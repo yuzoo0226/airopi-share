@@ -1,0 +1,17 @@
+_base_: example_base.yaml
+
+experiment:
+  name: example_lora
+
+model:
+  image_encoder_mode: per_image
+  finetune_recipe:
+    freeze_text_tower: true
+    train_action_expert: true
+    train_action_head: true
+    vision_train_mode: lora
+    vision_lora:
+      enabled: true
+      rank: 16
+      alpha: 16.0
+      targets: [patch_embedding, attention, mlp, head]

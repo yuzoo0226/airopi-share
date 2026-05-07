@@ -1,0 +1,14 @@
+{
+  "models": [
+    {
+      "name": "pi05_hsr_68tasks_full",
+      "worktree_path": "/path/to/AiroPi_task_sampler",
+      "checkpoint_path": "/abs/path/to/checkpoints/pi05_hsr_task6891011_level12_260304_finetune_68tasks_full_pi05/100000",
+      "config_name": "pi05_hsr_task6891011_level12_260304_finetune_68tasks_full_pi05",
+      "env": {
+        "POLICY_CONFIG_YAML": "/workspace/configs/experiments/pi05_hsr_task6891011_level12_260304_finetune_68tasks_full_pi05.yaml",
+        "POLICY_PYTORCH_DEVICE": "cuda"
+      }
+    }
+  ]
+}

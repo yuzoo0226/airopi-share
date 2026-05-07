@@ -1,0 +1,65 @@
+version: "2.4"
+
+################################################################################
+services:
+  deep:
+    image: airopi:${DEEP_IMAGE_TAG:-train}
+    hostname: ${HOSTNAME}
+    container_name: ${CONTAINER}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    privileged: true
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - NVIDIA_REQUIRE_CUDA=cuda>=11.0
+      - OPENPI_DOCKER_MODE=${OPENPI_DOCKER_MODE:-train}
+      - OPENPI_ENABLE_ROS_INIT=${OPENPI_ENABLE_ROS_INIT:-auto}
+      - OPENPI_PROJECT_PYTHON=${OPENPI_PROJECT_PYTHON:-3.11}
+      - ROBOT_NAME=${ROBOT_NAME:-}
+      - HSR_IP=${HSR_IP:-}
+      - ROS_IP=${ROS_IP:-}
+      - ROS_MASTER_URI=${ROS_MASTER_URI:-http://localhost:11311}
+      - CACHE_ROOT=/home/cache
+      - OPENPI_CACHE_ROOT=/home/cache
+      - UV_CACHE_DIR=/home/cache/uv-cache
+      - UV_DATA_DIR=/home/cache/uv-data
+      - UV_PYTHON_DIR=/home/cache/uv-python
+      - UV_PROJECT_ENVIRONMENT=/home/cache/venv
+      - XDG_DATA_HOME=/home/cache/uv-data
+      - OPENPI_DATA_HOME=/home/cache/openpi_cache
+      - HF_HOME=/home/cache/huggingface_home
+      - TMPDIR=/home/cache/tmp
+      - XDG_CACHE_HOME=/home/cache/cache
+      - HF_LEROBOT_HOME=/home/datasets
+    user: 0:0
+    build:
+      context: ../
+      dockerfile: ${DEEP_DOCKERFILE:-./docker/Dockerfile.train}
+      args:
+        OPENPI_PROJECT_PYTHON: ${OPENPI_PROJECT_PYTHON:-3.11}
+        HSR_APT_USER: ${HSR_APT_USER:-}
+        HSR_APT_PASSWORD: ${HSR_APT_PASSWORD:-}
+    shm_size: '16gb'
+    volumes:
+      - ./scripts:/home/docker_scripts
+      - ../:/home/openpi
+      - ${DEEP_CACHE_ROOT_HOST}:/home/cache
+      - ${DEEP_DATASET_PATH}:/home/datasets
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - ../deploy/hsr_data_collection/hsr_data_msgs:/root/catkin_ws/src/hsr_data_msgs
+      - ../deploy/hsr_data_collection/hsr_data_collection:/root/catkin_ws/src/hsr_data_collection
+      - ../deploy/hsr_openpi_deploy:/root/catkin_ws/src/hsr_openpi_deploy
+      - /etc/passwd:/etc/passwd:ro
+      - /etc/group:/etc/group:ro
+      - /dev/:/dev/
+    working_dir: /home/openpi
+    network_mode: host
+    command: /home/docker_scripts/initialize-docker-container.sh

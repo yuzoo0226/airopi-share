@@ -1,0 +1,66 @@
+hsr_id: "hsrc_049"
+location_name: "tmc"
+dualshock_interface: "ps3"
+record_base_dir: "/root/datasets/rosbags"
+record_topics:
+- "/tf"
+- "/tf_static"
+- "/hsrb/command_velocity"
+- "/hsrb/omni_base_controller/command"
+- "/hsrb/arm_trajectory_controller/command"
+- "/hsrb/gripper_controller/command"
+- "/hsrb/head_trajectory_controller/command"
+- "/hsrb/gripper_controller/grasp/goal"
+- "/hsrb/gripper_controller/follow_joint_trajectory/goal"
+- "/hsrb/hand_camera/image_raw/compressed"
+- "/hsrb/head_rgbd_sensor/rgb/image_rect_color/compressed"
+- "/hsrb/head_rgbd_sensor/depth_registered/image_rect_raw"
+- "/hsrb/base_scan"
+- "/hsrb/odom"
+- "/hsrb/wrist_wrench/raw"
+- "/hsrb/joint_states"
+- "/hsrb/servo_states"
+- "/hsrb/joy"
+- "/control_mode"
+ps3_scheme:
+  PS_DIR_UP: 13
+  PS_DIR_DOWN: 14
+  PS_DIR_LEFT: 15
+  PS_DIR_RIGHT: 16
+ps4_scheme:
+  PS_DIR_UP: 14
+  PS_DIR_DOWN: 15
+  PS_DIR_LEFT: 16
+  PS_DIR_RIGHT: 17
+arm_joint_names:
+- "arm_flex_joint"
+- "arm_lift_joint" 
+- "arm_roll_joint"
+- "wrist_flex_joint"
+- "wrist_roll_joint"
+head_joint_names:
+- "head_pan_joint"
+- "head_tilt_joint"
+gripper_joint_names:
+- "hand_motor_joint"
+home_joint_poses:
+  arm_flex_joint: 0.0
+  arm_lift_joint: 0.0
+  arm_roll_joint: -1.57
+  wrist_flex_joint: -1.57
+  wrist_roll_joint: 0.0
+  head_tilt_joint: 0.0
+top_down_joint_poses:
+  arm_flex_joint: -1.82
+  arm_lift_joint: 0.4
+  arm_roll_joint: 0.0
+  wrist_flex_joint: -1.32
+  wrist_roll_joint: 0.0
+  head_tilt_joint: -1.26
+pick_up_joint_poses:
+  arm_flex_joint: -1.57
+  arm_lift_joint: 0.2
+  arm_roll_joint: 0.0
+  wrist_flex_joint: -0.79
+  wrist_roll_joint: 0.0
+  head_tilt_joint: -0.63

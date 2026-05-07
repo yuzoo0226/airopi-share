@@ -1,0 +1,160 @@
+FROM nvidia/cuda:12.2.2-cudnn8-devel-ubuntu20.04
+SHELL ["/bin/bash", "-c"]
+
+# Configure image
+# Keep ROS Noetic on Ubuntu 20.04's system Python; OpenPI runtime is created separately at Python 3.11.
+ARG ROS_SYSTEM_PYTHON=3.8
+ARG OPENPI_PROJECT_PYTHON=3.11
+ARG OPENPI_FFMPEG_VERSION=7.1.1
+ARG HSR_APT_USER=
+ARG HSR_APT_PASSWORD=
+ARG DEBIAN_FRONTEND=noninteractive
+ENV OPENPI_PROJECT_PYTHON=${OPENPI_PROJECT_PYTHON}
+
+
+
+# Install apt dependencies (基本ツール、Python、その他必要なライブラリ)
+RUN apt update && apt install -y --no-install-recommends \
+    build-essential cmake \
+    git git-lfs openssh-client \
+    nano vim less util-linux tree \
+    htop atop nvtop \
+    sed gawk grep curl wget zip unzip \
+    tcpdump sysstat screen tmux \
+    libusb-1.0-0-dev libglib2.0-0 libgl1-mesa-glx libegl1-mesa \
+    speech-dispatcher portaudio19-dev libgeos-dev \
+    python${ROS_SYSTEM_PYTHON} python${ROS_SYSTEM_PYTHON}-venv python3-pip \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+
+RUN apt update && apt install -y --no-install-recommends \
+    nasm \
+    pkg-config \
+    xz-utils \
+    yasm \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+COPY ./docker/scripts/install-ffmpeg7.sh /tmp/install-ffmpeg7.sh
+RUN chmod +x /tmp/install-ffmpeg7.sh && \
+    /tmp/install-ffmpeg7.sh "${OPENPI_FFMPEG_VERSION}" && \
+    rm -f /tmp/install-ffmpeg7.sh
+ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/local/lib64/pkgconfig:/usr/local/share/pkgconfig
+ENV LD_LIBRARY_PATH=/usr/local/lib:/usr/local/lib64
+
+# Install gh CLI tool
+RUN (type -p wget >/dev/null || (apt update && apt-get install wget -y)) \
+    && mkdir -p -m 755 /etc/apt/keyrings \
+    && wget -qO- https://cli.github.com/packages/githubcli-archive-keyring.gpg | tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null \
+    && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+    && apt update \
+    && apt install gh -y \
+    && apt clean && rm -rf /var/lib/apt/lists/*
+
+# Setup python: シンボリックリンクの作成
+RUN ln -s /usr/bin/python3 /usr/bin/python
+
+# Install poetry
+RUN curl -sSL https://install.python-poetry.org | python - --version 1.8.5
+ENV PATH="/root/.local/bin:$PATH"
+RUN echo 'if [ "$HOME" != "/root" ]; then ln -sf /root/.local/bin/poetry $HOME/.local/bin/poetry; fi' >> /root/.bashrc
+RUN poetry config virtualenvs.create false
+RUN poetry config virtualenvs.in-project true
+
+# Install uv
+RUN wget -qO- https://astral.sh/uv/install.sh | sh
+
+# Install qt
+RUN apt update && apt install -y --no-install-recommends \
+ 	qtbase5-dev qtchooser qt5-qmake qtbase5-dev-tools
+
+# Set EGL as the rendering backend for MuJoCo
+ENV MUJOCO_GL="egl"
+
+
+# ROS
+## https://wiki.ros.org/noetic/Installation/Ubuntu
+### Install lacking dependencies
+RUN apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+        lsb-release && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+### Setup source.list
+RUN sh -c 'echo "deb http://packages.ros.org/ros/ubuntu $(lsb_release -sc) main" > /etc/apt/sources.list.d/ros-latest.list'
+### Setup keys
+RUN curl -s https://raw.githubusercontent.com/ros/rosdistro/master/ros.asc | apt-key add -
+###  Install ros-noetic-desktop-full
+RUN apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+        ros-noetic-desktop-full && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+###  Dependencies for building packages
+RUN apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+        python3-pip \
+        python3-rosdep \
+        python3-rosinstall \
+        python3-rosinstall-generator \
+        python3-wstool \
+        python3-catkin-tools \
+        build-essential && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN apt-get update && \
+    rosdep init && \
+    rosdep update
+
+### Install ros-noetic-tmc-desktop-full
+RUN if [ -z "${HSR_APT_USER}" ] || [ -z "${HSR_APT_PASSWORD}" ]; then \
+      echo "HSR_APT_USER and HSR_APT_PASSWORD are required to build deploy image." >&2; \
+      exit 1; \
+    fi
+RUN printf 'deb [arch=amd64] https://%s:%s@packages.hsr.io/ros/ubuntu %s main\n' "${HSR_APT_USER}" "${HSR_APT_PASSWORD}" "$(lsb_release -cs)" > /etc/apt/sources.list.d/tmc.list && printf 'deb [arch=amd64] https://%s:%s@packages.hsr.io/tmc/ubuntu %s multiverse main\n' "${HSR_APT_USER}" "${HSR_APT_PASSWORD}" "$(lsb_release -cs)" >> /etc/apt/sources.list.d/tmc.list
+RUN sh -c 'echo "deb http://packages.osrfoundation.org/gazebo/ubuntu-stable `lsb_release -cs` main" > /etc/apt/sources.list.d/gazebo-stable.list'
+RUN wget https://${HSR_APT_USER}:${HSR_APT_PASSWORD}@packages.hsr.io/tmc.key -O - | apt-key add -
+RUN wget https://raw.githubusercontent.com/ros/rosdistro/master/ros.asc -O - | apt-key add -
+RUN wget https://packages.osrfoundation.org/gazebo.key -O - | apt-key add -
+RUN install -d /etc/apt/auth.conf.d && printf 'machine packages.hsr.io\nlogin %s\npassword %s\n' "${HSR_APT_USER}" "${HSR_APT_PASSWORD}" > /etc/apt/auth.conf.d/auth.conf && chmod 600 /etc/apt/auth.conf.d/auth.conf
+RUN sh -c '/bin/echo -e "Package: ros-noetic-laser-ortho-projector\nPin: version 0.3.3*\nPin-Priority: 1001\n\nPackage: ros-noetic-laser-scan-matcher\nPin: version 0.3.3*\nPin-Priority: 1001\n\nPackage: ros-noetic-laser-scan-sparsifier\nPin: version 0.3.3*\nPin-Priority: 1001\n\nPackage: ros-noetic-laser-scan-splitter\nPin: version 0.3.3*\nPin-Priority: 1001\n\nPackage: ros-noetic-ncd-parser\nPin: version 0.3.3*\nPin-Priority: 1001\n\nPackage: ros-noetic-polar-scan-matcher\nPin: version 0.3.3*\nPin-Priority: 1001\n\nPackage: ros-noetic-scan-to-cloud-converter\nPin: version 0.3.3*\nPin-Priority: 1001\n\nPackage: ros-noetic-scan-tools\nPin: version 0.3.3*\nPin-Priority: 1001" > /etc/apt/preferences'
+RUN apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+        ros-noetic-tmc-desktop-full && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy helper scripts and user alignment files
+COPY ./docker/scripts/. /root/scripts/
+RUN chmod -R +x /root/scripts/*
+COPY ./docker/scripts/.bashrc /root/
+RUN chown 1000:1000 /root/.bashrc
+RUN chown -R 1000:1000 /home
+    
+RUN echo "export ROS_HOME=${HOME}/.ros" >> /root/.bashrc
+RUN echo 'export ROS_MASTER_URI="${ROS_MASTER_URI:-http://localhost:11311}"' >> /root/.bashrc
+RUN echo 'export ROS_IP="${ROS_IP:-}"' >> /root/.bashrc
+RUN echo 'export OPENPI_PROJECT_PYTHON="${OPENPI_PROJECT_PYTHON:-3.11}"' >> /root/.bashrc
+RUN echo "source /opt/ros/noetic/setup.bash" >> /root/.bashrc
+
+
+# ROS workspace
+WORKDIR /root
+RUN mkdir -p catkin_ws/src && \
+    cd /root/catkin_ws
+
+RUN echo 'if [ -f /root/catkin_ws/devel/setup.bash ]; then source /root/catkin_ws/devel/setup.bash; fi' >> /root/.bashrc
+RUN echo 'export ROS_PACKAGE_PATH="${ROS_PACKAGE_PATH:+${ROS_PACKAGE_PATH}:}/root/catkin_ws/src/"' >> /root/.bashrc
+RUN echo "export ROS_WORKSPACE=/root/catkin_ws" >> /root/.bashrc
+
+# # Force color prompt in terminal.
+RUN sed -i 's/#force_color_prompt=yes/force_color_prompt=yes/' /root/.bashrc
+
+RUN apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+ENTRYPOINT []
+
+CMD ["/bin/bash"]

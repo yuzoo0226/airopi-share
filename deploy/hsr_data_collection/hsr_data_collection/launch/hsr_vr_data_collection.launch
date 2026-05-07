@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<launch>
+    <arg name="personal_name" default="/"/>
+    <arg name="robot_name" default="hsrb"/>
+    <arg name="init_instruction" default=""/>
+    <arg name="quest_interface" default="quest3"/>
+
+    <rosparam file="$(find hsr_data_collection)/config/hsr_data_collection_config.yaml" command="load"/>
+
+    <node name="rosbag_manager" pkg="hsr_data_collection" type="rosbag_manager.py" output="screen">
+    </node>
+
+    <node name="status_led_manager" pkg="hsr_data_collection" type="status_led_manager.py" output="screen">
+    </node>
+
+    <node name="tmc_quest_interface" pkg="hsr_data_collection" type="tmc_quest_interface.py" output="screen">
+        <param name="init_instruction" value="$(arg init_instruction)"/>
+        <param name="quest_interface" value="$(arg quest_interface)"/>
+    </node>
+
+    <group ns="$(arg personal_name)/$(arg robot_name)">
+        <node name="pseudo_endeffector_position_controller" pkg="hsrb_pseudo_endeffector_position_controller" type="hsrb_pseudo_endeffector_position_controller">
+            <remap from="robot_description" to="/$(arg personal_name)/robot_description" />
+        </node>
+    </group>
+
+
+</launch>

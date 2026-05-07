@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<launch>
+    <arg name="init_instruction" default=""/>
+    <arg name="quest_interface" default="quest3"/>
+
+    <rosparam file="$(find hsr_data_collection)/config/hsr_data_collection_config.yaml" command="load"/>
+
+    <node name="rosbag_manager" pkg="hsr_data_collection" type="rosbag_manager.py" output="screen">
+    </node>
+
+    <node name="status_led_manager" pkg="hsr_data_collection" type="status_led_manager.py" output="screen">
+    </node>
+
+    <node name="nir_quest_interface" pkg="hsr_data_collection" type="nir_quest_interface.py" output="screen">
+        <param name="init_instruction" value="$(arg init_instruction)"/>
+        <param name="quest_interface" value="$(arg quest_interface)"/>
+    </node>
+
+</launch>

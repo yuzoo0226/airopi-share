@@ -1,0 +1,13 @@
+services:
+  hsrtx_container:
+    image: hsrtx_img:slim-release
+    tty: true
+    stdin_open: true
+    network_mode: host
+    environment:
+      - "ROS_MASTER_URI=http://169.254.251.208:11311"
+      - "ROS_IP=10.42.0.1"
+      - "HSR_NAME=hsrb"
+      - "IK_MODE=2"
+      - "GUIDANCE_FLAG=true"
+    command: bash -c "source /opt/ros/noetic/setup.bash; source /root/hsrtx_ws/devel/setup.bash; roslaunch nir_hsrb_teleoperation oculus_teleoperation.launch"

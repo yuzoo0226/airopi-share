@@ -1,0 +1,19 @@
+[workspace]
+name = "openpi-env"
+description = "System dependencies for OpenPi (ffmpeg, compilers, etc.)"
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[dependencies]
+ffmpeg = ">=7,<8"
+pkg-config = "*"
+compilers = "*"
+cython = "*"
+
+[activation.env]
+LD_LIBRARY_PATH = "$CONDA_PREFIX/lib:${LD_LIBRARY_PATH}"
+PKG_CONFIG_PATH = "$CONDA_PREFIX/lib/pkgconfig:${PKG_CONFIG_PATH}"
+
+[tasks]
+sync = "GIT_LFS_SKIP_SMUDGE=1 uv sync"
+sync-blackwell = { cmd = "bash docker/scripts/apply-gb200-overlay.sh .", depends-on = ["sync"] }
