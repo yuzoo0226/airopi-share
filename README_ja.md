@@ -1058,3 +1058,17 @@ ${CHECKPOINT_DIR}/<exp_name>/
 - transformers 4.53.2
 - lerobot (git rev 固定, pyproject.toml 参照)
 - pixi: ffmpeg ≥ 7 < 8, pkg-config, compilers, cython (conda-forge)
+
+### 13.3 公開予定のモデル重み
+
+HSR 向け π0.5 の以下のチェックポイントを公開予定です。各エントリは
+`scripts/train.py` が出力する `${CHECKPOINT_DIR}/<exp_name>/<step>/` の step
+ディレクトリ (構造は §10.2 を参照) に対応します。デプロイ launcher (§7.1) の
+`checkpoint_dir:=...` 引数や policy server (§7.2) の `POLICY_CHECKPOINT_DIR`
+にこの step ディレクトリを指定して読み込みます。
+
+| 学習段階 | run 名 (step) | タスク |
+| --- | --- | --- |
+| 事前学習 | `pi05_hsr_75tasks_fast_multinode_8nodes_vision_lora_action_full` (step 250,000) | HSR 75 タスク。π0.5 を vision LoRA + action expert full で 8 ノード学習 |
+| 事前学習 + 事後学習 | `pi05_hsr_exercise_ph1_0405_lora_pretrain` (step 49,999) | テーブル上の pick & place (1 タスク) |
+| 事前学習 + 事後学習 | `pi05_hsr_task6891011_level12_260304_finetune_68tasks_full_pi05` (step 200,000) | ボトル移動、ボトル 2 本移動、箱移動、電子レンジ開閉、カップ移動 (5 タスク) |

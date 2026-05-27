@@ -1057,3 +1057,17 @@ the `example_` prefix (or update the `.gitignore` rule).
 - transformers 4.53.2
 - lerobot (pinned git rev, see `pyproject.toml`)
 - pixi: ffmpeg ≥ 7 < 8, pkg-config, compilers, cython (conda-forge)
+
+### 13.3 Released model weights
+
+The following π0.5 checkpoints (HSR) are planned for public release. Each entry
+corresponds to a step directory under `${CHECKPOINT_DIR}/<exp_name>/<step>/`
+produced by `scripts/train.py` (layout described in §10.2), and can be loaded
+either via `checkpoint_dir:=...` on the deploy launcher (§7.1) or by pointing
+the policy server (§7.2) at the step directory.
+
+| Stage | Run name (step) | Tasks |
+| --- | --- | --- |
+| Pre-training | `pi05_hsr_75tasks_fast_multinode_8nodes_vision_lora_action_full` (step 250,000) | 75 HSR tasks; π0.5 with vision LoRA + full action expert, trained on 8 nodes |
+| Pre-training + post-training | `pi05_hsr_exercise_ph1_0405_lora_pretrain` (step 49,999) | Table pick-and-place (1 task) |
+| Pre-training + post-training | `pi05_hsr_task6891011_level12_260304_finetune_68tasks_full_pi05` (step 200,000) | Bottle relocation, two-bottle relocation, box relocation, open/close microwave, cup relocation (5 tasks) |
