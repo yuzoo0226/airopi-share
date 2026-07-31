@@ -1072,15 +1072,13 @@ the policy server (§7.2) at the step directory.
 | Pre-training + post-training | `pi05_hsr_exercise_ph1_0405_lora_pretrain` (step 49,999) | Table pick-and-place (1 task) |
 | Pre-training + post-training | `pi05_hsr_task6891011_level12_260304_finetune_68tasks_full_pi05` (step 200,000) | Bottle relocation, two-bottle relocation, box relocation, open/close microwave, cup relocation (5 tasks) |
 
-The released weights are hosted in the R2 bucket `airoa-oss-hsr-moma-5k`. Each
-path below is a complete step directory (the
-[checkpoint directory layout](#102-checkpoint-directory-layout)); download the
-whole directory and pass it as `checkpoint_dir:=...`
+The released base model weights are published on Hugging Face at
+[`airoa-org/airoa-pi05-hsr-base`](https://huggingface.co/airoa-org/airoa-pi05-hsr-base).
+Download the checkpoint directory (the
+[checkpoint directory layout](#102-checkpoint-directory-layout)) and pass it as
+`checkpoint_dir:=...`
 ([on-robot deployment](#71-on-robot-deployment-ros--roslaunch)) or
 `POLICY_CHECKPOINT_DIR` ([policy server](#72-policy-server-serverdockerfile)).
 
-| Run name (step) | Download path |
-| --- | --- |
-| `pi05_hsr_75tasks_fast_multinode_8nodes_vision_lora_action_full` (step 250,000) | `s3://airoa-oss-hsr-moma-5k/checkpoints/pretrained/pi05_hsr_75tasks_fast_multinode_8nodes_vision_lora_action_full/250000/` |
-| `pi05_hsr_exercise_ph1_0405_lora_pretrain` (step 49,999) | `s3://airoa-oss-hsr-moma-5k/checkpoints/finetuned/pi05_hsr_exercise_ph1_0405_lora_pretrain/49999/` |
-| `pi05_hsr_task6891011_level12_260304_finetune_68tasks_full_pi05` (step 200,000) | `s3://airoa-oss-hsr-moma-5k/checkpoints/finetuned/pi05_hsr_task6891011_level12_260304_finetune_68tasks_full_pi05/200000/` |
+The training dataset (AIRoA MoMa 5k, gated) is available at
+[`airoa-org/airoa-moma-5k`](https://huggingface.co/datasets/airoa-org/airoa-moma-5k).

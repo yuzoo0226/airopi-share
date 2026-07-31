@@ -1073,16 +1073,15 @@ HSR 向け π0.5 の以下のチェックポイントを公開予定です。各
 | 事前学習 + 事後学習 | `pi05_hsr_exercise_ph1_0405_lora_pretrain` (step 49,999) | テーブル上の pick & place (1 タスク) |
 | 事前学習 + 事後学習 | `pi05_hsr_task6891011_level12_260304_finetune_68tasks_full_pi05` (step 200,000) | ボトル移動、ボトル 2 本移動、箱移動、電子レンジ開閉、カップ移動 (5 タスク) |
 
-公開された重みは R2 バケット `airoa-oss-hsr-moma-5k` に格納されています。以下の
-各パスは step ディレクトリ全体
-([チェックポイントのディレクトリ構成](#102-チェックポイントのディレクトリ構成)) です。
-ディレクトリごとダウンロードし、`checkpoint_dir:=...`
+公開されたベースモデルの重みは Hugging Face の
+[`airoa-org/airoa-pi05-hsr-base`](https://huggingface.co/airoa-org/airoa-pi05-hsr-base)
+で公開されています。チェックポイントディレクトリ
+([チェックポイントのディレクトリ構成](#102-チェックポイントのディレクトリ構成)) を
+ダウンロードし、`checkpoint_dir:=...`
 ([ロボット実機へのデプロイ](#71-ロボット実機へのデプロイ-ros--roslaunch)) または
 `POLICY_CHECKPOINT_DIR` ([ポリシーサーバ](#72-ポリシーサーバ-serverdockerfile)) に
 指定してください。
 
-| run 名 (step) | ダウンロードパス |
-| --- | --- |
-| `pi05_hsr_75tasks_fast_multinode_8nodes_vision_lora_action_full` (step 250,000) | `s3://airoa-oss-hsr-moma-5k/checkpoints/pretrained/pi05_hsr_75tasks_fast_multinode_8nodes_vision_lora_action_full/250000/` |
-| `pi05_hsr_exercise_ph1_0405_lora_pretrain` (step 49,999) | `s3://airoa-oss-hsr-moma-5k/checkpoints/finetuned/pi05_hsr_exercise_ph1_0405_lora_pretrain/49999/` |
-| `pi05_hsr_task6891011_level12_260304_finetune_68tasks_full_pi05` (step 200,000) | `s3://airoa-oss-hsr-moma-5k/checkpoints/finetuned/pi05_hsr_task6891011_level12_260304_finetune_68tasks_full_pi05/200000/` |
+学習データセット (AIRoA MoMa 5k、ゲート付き) は
+[`airoa-org/airoa-moma-5k`](https://huggingface.co/datasets/airoa-org/airoa-moma-5k)
+で公開されています。
