@@ -78,6 +78,19 @@ def decode_png(payload: Dict[str, Any]) -> np.ndarray:
     return np.asarray(Image.open(io.BytesIO(payload["bytes"])).convert("RGB"))
 
 
+def _dataset_action_std(dataset: pathlib.Path) -> np.ndarray:
+    """Per-dimension standard deviation of action.relative over the whole dataset."""
+    import pyarrow.parquet as pq
+
+    chunks = []
+    for path in sorted((dataset / "data").rglob("*.parquet")):
+        table = pq.read_table(path, columns=["action.relative"])
+        chunks.append(np.stack(table["action.relative"].to_numpy(zero_copy_only=False)))
+    if not chunks:
+        return np.ones(len(ACTION_NAMES), dtype=np.float32)
+    return np.concatenate(chunks).std(axis=0)
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--dataset", required=True, type=pathlib.Path)
@@ -145,21 +158,29 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     P = np.array([r["pred"] for r in rows], dtype=np.float32)
     err = np.abs(P - T)
 
-    print(f"\n{len(rows)} frames from episodes {[e for e, _ in files]}")
-    print(f"{'dim':12s} {'target std':>11s} {'MAE':>9s} {'MAE/std':>9s}")
-    for i, name in enumerate(ACTION_NAMES):
-        std = float(T[:, i].std())
-        mae = float(err[:, i].mean())
-        ratio = mae / std if std > 1e-6 else float("nan")
-        print(f"{name:12s} {std:11.4f} {mae:9.4f} {ratio:9.2f}")
+    # Normalise against the spread of the *whole* dataset, not of the sampled
+    # frames: a handful of frames from one episode has almost no variance, which
+    # would make every ratio meaningless.
+    dataset_std = _dataset_action_std(args.dataset)
 
-    moving = [i for i, _ in enumerate(ACTION_NAMES) if T[:, i].std() > 1e-4]
+    print(f"\n{len(rows)} frames from episodes {[e for e, _ in files]}")
+    print(f"{'dim':12s} {'dataset std':>12s} {'MAE':>9s} {'MAE/std':>9s}")
+    for i, name in enumerate(ACTION_NAMES):
+        std = float(dataset_std[i])
+        mae = float(err[:, i].mean())
+        ratio = mae / std if std > 1e-4 else float("nan")
+        print(f"{name:12s} {std:12.4f} {mae:9.4f} {ratio:9.2f}")
+
+    moving = [i for i, _ in enumerate(ACTION_NAMES) if dataset_std[i] > 1e-4]
     print(
         f"\nover the {len(moving)} dimensions that actually move "
         f"({', '.join(ACTION_NAMES[i] for i in moving)}):"
     )
     print(f"  mean |error| = {err[:, moving].mean():.4f}")
-    print(f"  normalised   = {np.nanmean([err[:, i].mean() / T[:, i].std() for i in moving]):.2f} x target std")
+    print(
+        "  normalised   = "
+        f"{np.mean([err[:, i].mean() / dataset_std[i] for i in moving]):.2f} x dataset std"
+    )
     print("\n  < 0.3 x std  : the policy reproduces the demonstrations well")
     print("  ~ 1.0 x std  : no better than predicting the dataset mean")
 
