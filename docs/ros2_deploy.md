@@ -6,6 +6,7 @@ ROS 1 Noetic deployment (`deploy/hsr_openpi_deploy`) with an unchanged control
 loop.
 
 > 日本語版: [`ros2_deploy_ja.md`](ros2_deploy_ja.md)
+> Build log / known pitfalls (JA): [`ros2_worklog_ja.md`](ros2_worklog_ja.md)
 
 ---
 

@@ -5,6 +5,7 @@ pi0 / pi0.5 ポリシーを **ROS 2 Humble** の HSR（実機・Ignition Gazebo 
 制御ループの挙動は同じです。
 
 > 英語版: [`ros2_deploy.md`](ros2_deploy.md)
+> 構築記録・ハマった点: [`ros2_worklog_ja.md`](ros2_worklog_ja.md)
 
 ---
 
