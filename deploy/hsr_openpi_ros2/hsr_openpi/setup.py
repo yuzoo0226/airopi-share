@@ -13,7 +13,7 @@ setup(
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
         (os.path.join("share", package_name), ["package.xml"]),
         (os.path.join("share", package_name, "launch"), glob("launch/*.launch.py")),
-        (os.path.join("share", package_name, "config"), glob("config/*.yaml")),
+        (os.path.join("share", package_name, "config"), glob("config/*.yaml") + glob("config/*.json")),
         (os.path.join("share", package_name, "worlds"), glob("worlds/*.sdf")),
     ],
     install_requires=["setuptools"],
@@ -30,6 +30,7 @@ setup(
             "control_mode_publisher = hsr_openpi.control_mode_publisher:main",
             "random_motion = hsr_openpi.random_motion:main",
             "pick_task = hsr_openpi.pick_task:main",
+            "bag_recorder = hsr_openpi.bag_recorder:main",
         ],
     },
 )

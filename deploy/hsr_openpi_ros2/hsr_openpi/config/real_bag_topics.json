@@ -1,0 +1,12 @@
+{
+  "joint_states": "/hsrb/joint_states",
+  "head_image": "/hsrb/head_rgbd_sensor/rgb/image_rect_color/compressed",
+  "hand_image": "/hsrb/hand_camera/image_raw/compressed",
+  "arm_command": "/hsrb/arm_trajectory_controller/joint_trajectory",
+  "head_command": "/hsrb/head_trajectory_controller/joint_trajectory",
+  "gripper_command": "/hsrb/gripper_controller/joint_trajectory",
+  "base_command": "/hsrb/omni_base_controller/cmd_vel",
+  "control_mode": "/control_mode",
+  "episode": "/hsr_bag_recorder/episode",
+  "clock": "/clock"
+}

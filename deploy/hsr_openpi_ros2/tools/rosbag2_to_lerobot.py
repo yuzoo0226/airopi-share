@@ -155,7 +155,11 @@ class Series:
 # --------------------------------------------------------------------------- #
 # bag reading
 # --------------------------------------------------------------------------- #
-EPISODE_TOPIC_CANDIDATES = ["/hsr_pick_task/episode", "/hsr_random_motion/episode"]
+EPISODE_TOPIC_CANDIDATES = [
+    "/hsr_pick_task/episode",
+    "/hsr_bag_recorder/episode",   # teleoperation recordings
+    "/hsr_random_motion/episode",
+]
 
 
 def read_bag(bag_path: pathlib.Path, topics: Dict[str, str]) -> Dict[str, Series]:
@@ -237,6 +241,10 @@ def segment_episodes(series: Dict[str, Series], default_task: str) -> List[Episo
                 open_ep = (int(parts[1]), t, task)
             elif kind == "end" and open_ep is not None:
                 episodes.append(Episode(open_ep[0], open_ep[1], t, open_ep[2]))
+                open_ep = None
+            elif kind == "discard" and open_ep is not None:
+                # the operator threw this attempt away; keep it out of the dataset
+                logger.info("episode %s discarded by the recorder", open_ep[0])
                 open_ep = None
         if episodes:
             return episodes
