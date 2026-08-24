@@ -94,7 +94,7 @@ DEFAULT_TOPICS = {
     "gripper_command": "/gripper_controller/joint_trajectory",
     "base_command": "/omni_base_controller/cmd_vel",
     "control_mode": "/control_mode",
-    "episode": "/hsr_random_motion/episode",
+    "episode": "/hsr_pick_task/episode",
     "clock": "/clock",
 }
 
@@ -155,8 +155,21 @@ class Series:
 # --------------------------------------------------------------------------- #
 # bag reading
 # --------------------------------------------------------------------------- #
+EPISODE_TOPIC_CANDIDATES = ["/hsr_pick_task/episode", "/hsr_random_motion/episode"]
+
+
 def read_bag(bag_path: pathlib.Path, topics: Dict[str, str]) -> Dict[str, Series]:
     from rosbags.highlevel import AnyReader  # noqa: PLC0415
+
+    # Pick whichever driver's episode topic this bag actually carries.
+    with AnyReader([bag_path]) as probe:
+        available = {c.topic for c in probe.connections}
+    if topics["episode"] not in available:
+        for candidate in EPISODE_TOPIC_CANDIDATES:
+            if candidate in available:
+                logger.info("episode topic: using %s", candidate)
+                topics = dict(topics, episode=candidate)
+                break
 
     wanted = {v: k for k, v in topics.items()}
     series: Dict[str, Series] = {k: Series() for k in topics}

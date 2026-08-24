@@ -14,9 +14,7 @@
 -->
 <sdf version="1.7">
   <world name="default">
-    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics">
-      <collision_detector>bullet</collision_detector>
-    </plugin>
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
     <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
     <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
     <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors"/>
@@ -27,6 +25,14 @@
     <physics name="5ms" type="ignored">
       <max_step_size>0.005</max_step_size>
       <real_time_factor>1.0</real_time_factor>
+      <!-- gz-physics dartsim reads the collision detector from here, not from
+           the Physics *plugin* element. With the default ODE detector the
+           simulator aborts partway through a long collection run:
+             dart::collision::OdeCollisionDetector::collide
+               -> dxHashSpace::collide -> dDebug -> abort   (exit code 134) -->
+      <dart>
+        <collision_detector>bullet</collision_detector>
+      </dart>
     </physics>
     <scene>
       <shadows>0</shadows>

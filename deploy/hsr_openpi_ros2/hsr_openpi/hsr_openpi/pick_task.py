@@ -198,6 +198,9 @@ class PickTask(Node):
         p("object_pose_topic", "/gz/dynamic_pose")
         p("control_mode_topic", "/control_mode")
         p("episode_topic", "~/episode")
+        # The per-episode task string is also published as a plain instruction so
+        # hsr_openpi_node picks it up on its ~/instruction topic during evaluation.
+        p("instruction_topic", "/hsr_openpi/instruction")
 
         g = lambda n: self.get_parameter(n).value  # noqa: E731
         self.update_freq = float(g("update_freq"))
@@ -224,6 +227,7 @@ class PickTask(Node):
         self.base_pub = self.create_publisher(Twist, g("base_command_topic"), command_qos())
         self.control_mode_pub = self.create_publisher(String, g("control_mode_topic"), command_qos(10))
         self.episode_pub = self.create_publisher(String, str(g("episode_topic")), command_qos(10))
+        self.instruction_pub = self.create_publisher(String, str(g("instruction_topic")), command_qos(10))
 
         # -- subscriptions ------------------------------------------------- #
         self._lock = threading.Lock()
@@ -428,6 +432,7 @@ class PickTask(Node):
         with self._lock:
             self.object_pose = None
         self._episode_started = False
+        self.instruction_pub.publish(String(data=self._task_string()))
         self.get_logger().info(
             f"episode {self.episode_index}: {self.spec.name} at ({obj_x:.2f}, {obj_y:.2f}), "
             f"start ({start_x:.2f}, {start_y:.2f}, {yaw:+.2f}), arm_lift={self.grasp_arm_lift:.3f}"
@@ -595,7 +600,9 @@ class PickTask(Node):
                 self.phase = self.WATCH if str(g("drive")) == "external" else self.APPROACH
                 self.phase_elapsed = 0.0
                 self._phase_start = None
-                self.episode_pub.publish(String(data=f"start {self.episode_index} {self._task_string()}"))
+                task = self._task_string()
+                self.episode_pub.publish(String(data=f"start {self.episode_index} {task}"))
+                self.instruction_pub.publish(String(data=task))
                 self._episode_started = True
             return
 
