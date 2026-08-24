@@ -41,14 +41,20 @@ sim() { docker exec "${SIM_CONTAINER}" bash -lc "source /opt/ros/humble/setup.ba
 echo "[1/4] simulator"
 "${COMPOSE_DIR}/stop-sim.sh" >/dev/null 2>&1 || true
 sleep 2
+# Truncate the log first: the readiness grep can otherwise match the previous
+# run's lines before the redirect truncates the file.
+sim ": > /tmp/gz.log"
 docker exec -d "${SIM_CONTAINER}" bash -lc "
     source /opt/ros/humble/setup.bash
     source /home/hsr/hsr_ros2_ws/install/setup.bash
     exec ros2 launch hsr_openpi hsr_sim.launch.py world:=${WORLD} > /tmp/gz.log 2>&1"
-for _ in $(seq 1 60); do
-    n=$(docker exec "${SIM_CONTAINER}" bash -lc 'grep -ac "Configured and activated" /tmp/gz.log 2>/dev/null || echo 0')
-    [ "${n}" -ge 6 ] && break
+for _ in $(seq 1 72); do
     sleep 5
+    # grep -c prints 0 *and* exits 1 when there are no matches, so the
+    # "|| echo 0" fallback would append a second line and break the comparison.
+    n=$(docker exec "${SIM_CONTAINER}" bash -lc 'grep -ac "Configured and activated" /tmp/gz.log 2>/dev/null; true' | head -1)
+    n="${n:-0}"
+    [ "${n}" -ge 6 ] && break
 done
 [ "${n:-0}" -ge 6 ] || { echo "[ERROR] the simulator did not come up (see /tmp/gz.log)"; exit 1; }
 echo "      controllers active"

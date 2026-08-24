@@ -77,6 +77,7 @@ _ARGS = (
     ("world", "default", "Ignition world name."),
     # pick driver
     ("close_time", "2.2", "Seconds spent closing the gripper (includes the grasp fix respawn)."),
+    ("approach_timeout", "8.0", "Seconds the base gets to reach the grasp pose before giving up."),
     ("objects", "", "Comma separated subset of the object library (empty = all ten)."),
     ("results_path", "", "Where the per-episode success log is written."),
     # random driver
@@ -135,6 +136,7 @@ def _launch_setup(context, *args, **kwargs):
             "seed": cfg("seed"),
             "world": cfg("world"),
             "close_time": cfg("close_time"),
+            "approach_timeout": cfg("approach_timeout"),
             "results_path": cfg("results_path"),
             "object_pose_topic": GZ_POSE_TOPIC,
         }

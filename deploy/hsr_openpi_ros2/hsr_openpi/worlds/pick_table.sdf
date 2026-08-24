@@ -25,14 +25,17 @@
     <physics name="5ms" type="ignored">
       <max_step_size>0.005</max_step_size>
       <real_time_factor>1.0</real_time_factor>
-      <!-- gz-physics dartsim reads the collision detector from here, not from
-           the Physics *plugin* element. With the default ODE detector the
-           simulator aborts partway through a long collection run:
-             dart::collision::OdeCollisionDetector::collide
-               -> dxHashSpace::collide -> dDebug -> abort   (exit code 134) -->
-      <dart>
-        <collision_detector>bullet</collision_detector>
-      </dart>
+      <!-- Physics engine notes (both crashes are exit code 134):
+             default ODE collision detector - survives a long run but eventually
+               aborts in dart::collision::OdeCollisionDetector::collide
+               -> dxHashSpace::collide -> dDebug;
+             <dart><collision_detector>bullet</collision_detector></dart> -
+               aborts immediately at start-up instead, in
+               dart::constraint::BoxedLcpConstraintSolver::solveConstrainedGroup
+               (BoxedLcpConstraintSolver.cpp:229, the isSymmetric assertion).
+           ODE is the lesser evil: it ran 84 collection episodes before failing,
+           so the collectors and the evaluator restart the simulator when it
+           dies rather than trying to avoid the crash. -->
     </physics>
     <scene>
       <shadows>0</shadows>

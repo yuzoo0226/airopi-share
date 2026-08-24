@@ -493,35 +493,48 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.topics_json:
         topics.update(json.loads(args.topics_json.read_text()))
 
-    if not args.bag.exists():
-        logger.error("bag not found: %s", args.bag)
+    results_files = list(args.results_json or [])
+    if results_files and len(results_files) != len(args.bag):
+        logger.error("--results-json must be given once per --bag (or not at all)")
         return 1
 
-    series = read_bag(args.bag, topics)
-    episodes = segment_episodes(series, args.task)
-    logger.info("found %d episode(s)", len(episodes))
-
-    if args.results_json:
-        results = json.loads(args.results_json.read_text())
-        ok = {int(r["episode"]) for r in results.get("results", []) if r.get("success")}
-        before = len(episodes)
-        episodes = [e for e in episodes if e.index in ok]
-        logger.info(
-            "success filter: kept %d/%d episodes (%d failed demonstrations dropped)",
-            len(episodes), before, before - len(episodes),
-        )
-    if args.max_episodes:
-        episodes = episodes[: args.max_episodes]
-
     episodes_frames: List[Tuple[Episode, List[Dict[str, Any]]]] = []
-    for episode in episodes:
-        frames = build_frames(
-            series, episode, fps=args.fps, image_order=args.image_order, max_age_s=args.max_age
-        )
-        if len(frames) < args.min_frames:
-            logger.warning("episode %d has only %d frames; skipping", episode.index, len(frames))
-            continue
-        episodes_frames.append((episode, frames))
+    for bag_index, bag in enumerate(args.bag):
+        if not bag.exists():
+            logger.error("bag not found: %s", bag)
+            return 1
+        logger.info("=== %s ===", bag)
+        series = read_bag(bag, topics)
+        episodes = segment_episodes(series, args.task)
+        logger.info("found %d episode(s)", len(episodes))
+
+        if results_files:
+            results = json.loads(results_files[bag_index].read_text())
+            ok = {int(r["episode"]) for r in results.get("results", []) if r.get("success")}
+            before = len(episodes)
+            episodes = [e for e in episodes if e.index in ok]
+            logger.info(
+                "success filter: kept %d/%d episodes (%d failed demonstrations dropped)",
+                len(episodes), before, before - len(episodes),
+            )
+
+        for episode in episodes:
+            frames = build_frames(
+                series, episode, fps=args.fps, image_order=args.image_order, max_age_s=args.max_age
+            )
+            if len(frames) < args.min_frames:
+                logger.warning("episode %d has only %d frames; skipping", episode.index, len(frames))
+                continue
+            # Episode indices restart in every bag, so renumber to keep them
+            # unique across the merged dataset.
+            episodes_frames.append(
+                (dataclasses.replace(episode, index=len(episodes_frames)), frames)
+            )
+        if args.max_episodes and len(episodes_frames) >= args.max_episodes:
+            break
+
+    if args.max_episodes:
+        episodes_frames = episodes_frames[: args.max_episodes]
 
     if not episodes_frames:
         logger.error("no usable episodes")
@@ -536,7 +549,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         robot_type=args.robot_type,
     )
     total = sum(len(f) for _, f in episodes_frames)
-    logger.info("done: %d episodes / %d frames -> %s", len(episodes_frames), total, out)
+    logger.info(
+        "done: %d episodes / %d frames from %d bag(s) -> %s",
+        len(episodes_frames), total, len(args.bag), out,
+    )
     logger.info("next: compute norm stats, then train with dataset.repo_id=%s", args.repo_id)
     return 0
 

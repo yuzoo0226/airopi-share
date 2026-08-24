@@ -30,8 +30,19 @@ elif [[ "${MODE}" == "--collect" ]]; then
         'dynamic_pos[e]'
     )
 else
+    # Everything. Collection/evaluation nodes MUST be in this list: a leftover
+    # pick_task keeps publishing cmd_vel and spawning objects, and a cmd_vel
+    # arriving while omni_base_controller is still being activated segfaults the
+    # freshly started simulator (hsrb_base_controllers::OmniBaseController, exit
+    # code 139).
     PATTERNS=(
         'hsr_openpi_nod[e]'
+        'pick_tas[k]'
+        'random_motio[n]'
+        'bag_recorde[r]'
+        'rosbag2_recorde[r]'
+        'ros2 ba[g] record'
+        'republis[h]'
         'ros2 laun[c]h'
         'ig[n] gazebo'
         'robot_state_publishe[r]'
