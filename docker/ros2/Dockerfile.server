@@ -1,0 +1,87 @@
+# =============================================================================
+#  openpi pi0 / pi0.5 policy server (websocket) — arm64 / amd64
+#
+#  Inference-only image: it deliberately skips the training dependencies
+#  (lerobot, torch, torchcodec, ffmpeg 7, wandb) because the released HSR
+#  checkpoints are JAX/orbax and `server/serve_hsr_policy_ws.py` never imports
+#  the LeRobot data pipeline. That keeps the image buildable on aarch64 in a
+#  couple of minutes instead of compiling PyAV/FFmpeg from source.
+#
+#  JAX pulls the CUDA runtime through its own nvidia-* wheels, so no CUDA base
+#  image is required — only the NVIDIA container runtime on the host.
+#  Set JAX_PLATFORMS=cpu to force CPU inference.
+# =============================================================================
+FROM python:3.11-slim-bookworm
+
+SHELL ["/bin/bash", "-c"]
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        git curl ca-certificates libgl1 libglib2.0-0 procps \
+    && rm -rf /var/lib/apt/lists/*
+
+# --- python dependencies ----------------------------------------------------
+# Versions mirror pyproject.toml (including the [tool.uv] override-dependencies
+# for ml-dtypes / tensorstore).
+ARG JAX_VARIANT=cuda12
+RUN pip install --upgrade pip setuptools wheel
+
+RUN pip install \
+        "jax[${JAX_VARIANT}]==0.5.3" \
+        "ml-dtypes==0.4.1" \
+        "tensorstore==0.1.74" \
+        "flax==0.10.2" \
+        "orbax-checkpoint==0.11.13" \
+        "numpy>=1.22.4,<2.0.0"
+
+RUN pip install \
+        "augmax>=0.3.4" \
+        "beartype==0.19.0" \
+        "dm-tree>=0.1.8" \
+        "einops>=0.8.0" \
+        "equinox>=0.11.8" \
+        "etils[epath]>=1.9.0" \
+        "filelock>=3.16.1" \
+        "flatbuffers>=24.3.25" \
+        "fsspec[gcs]>=2024.6.0" \
+        "imageio>=2.36.1" \
+        "jaxtyping==0.2.36" \
+        "ml_collections==1.0.0" \
+        "msgpack>=1.0.5" \
+        "numpydantic>=1.6.6" \
+        "opencv-python-headless>=4.10.0.84" \
+        "pillow>=11.0.0" \
+        "polars>=1.30.0" \
+        "pyyaml>=6.0.2" \
+        "rich>=14.0.0" \
+        "sentencepiece>=0.2.0" \
+        "tqdm-loggable>=0.2" \
+        "transformers==4.53.2" \
+        "treescope>=0.1.7" \
+        "typing-extensions>=4.12.2" \
+        "tyro>=0.9.5" \
+        "websockets>=11.0"
+
+# --- user matching the host so mounted caches stay writable -----------------
+ARG USER_UID=1000
+ARG USER_GID=1000
+RUN groupadd -g ${USER_GID} openpi 2>/dev/null || true \
+    && useradd -m -u ${USER_UID} -g ${USER_GID} -s /bin/bash openpi 2>/dev/null || true \
+    && mkdir -p /home/openpi && chown ${USER_UID}:${USER_GID} /home/openpi
+
+# The repository itself is bind mounted at /home/openpi at runtime; adding both
+# source roots to PYTHONPATH makes `openpi` and `openpi_client` importable
+# without an editable install.
+ENV PYTHONPATH=/home/openpi/src:/home/openpi/packages/openpi-client/src \
+    HOME=/home/openpi \
+    XLA_PYTHON_CLIENT_PREALLOCATE=false
+
+COPY docker/ros2/entrypoint-server.sh /usr/local/bin/entrypoint-server.sh
+RUN chmod +x /usr/local/bin/entrypoint-server.sh
+
+USER openpi
+WORKDIR /home/openpi
+ENTRYPOINT ["/usr/local/bin/entrypoint-server.sh"]
+CMD ["serve"]

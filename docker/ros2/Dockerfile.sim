@@ -1,0 +1,90 @@
+# =============================================================================
+#  HSR ROS 2 Humble + Ignition Gazebo Fortress simulator image (arm64 / amd64)
+#
+#  The image only carries *dependencies*; the HSR workspace itself is bind
+#  mounted at /home/hsr/hsr_ros2_ws and built with colcon at runtime so that
+#  iterating on the workspace does not require an image rebuild.
+#
+#  NOTE: on arm64 the ROS buildfarm does not publish ros-humble-ros-gz-sim nor
+#  ros-humble-gz-ros2-control, so those two are built from source inside the
+#  mounted workspace (see src/_extern).
+# =============================================================================
+FROM ros:humble-ros-base
+
+SHELL ["/bin/bash", "-c"]
+ENV DEBIAN_FRONTEND=noninteractive
+
+# --- base tooling ----------------------------------------------------------
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl gnupg lsb-release ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# The ignition packages mirrored in packages.ros.org are not self consistent on
+# arm64 (ignition-fortress 1.0.3 needs libignition-sensors6 >= 6.8.1 while only
+# 6.8.0 is mirrored), so pull Gazebo from the upstream OSRF repository and give
+# it a higher pin than the ROS mirror.
+RUN curl -sSL https://packages.osrfoundation.org/gazebo.gpg \
+        -o /usr/share/keyrings/pkgs-osrf-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/pkgs-osrf-archive-keyring.gpg] http://packages.osrfoundation.org/gazebo/ubuntu-stable $(lsb_release -cs) main" \
+        > /etc/apt/sources.list.d/gazebo-stable.list \
+    && printf 'Package: libignition-* ignition-* libgz-* libsdformat*\nPin: origin packages.osrfoundation.org\nPin-Priority: 1001\n' \
+        > /etc/apt/preferences.d/osrf-gazebo
+
+# --- gazebo fortress + ros2_control ----------------------------------------
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential cmake git wget sudo \
+        vim less tmux net-tools iputils-ping psmisc procps \
+        python3-pip python3-vcstool \
+        python3-colcon-common-extensions python3-colcon-mixin python3-rosdep \
+        ignition-fortress \
+        ros-humble-ros2-control ros-humble-ros2-controllers \
+        ros-humble-xacro ros-humble-joint-state-publisher \
+        ros-humble-depth-image-proc ros-humble-topic-tools \
+        ros-humble-image-transport-plugins ros-humble-compressed-image-transport \
+        ros-humble-rviz2 ros-humble-rqt-image-view \
+        libegl1 libgl1-mesa-dri libglx-mesa0 mesa-utils xvfb x11-apps xauth \
+    && rm -rf /var/lib/apt/lists/*
+
+# --- resolve workspace dependencies from the package manifests --------------
+# Only the package.xml files are copied so this layer stays cached while the
+# actual sources change.
+COPY manifests/ /tmp/ws/src/
+RUN apt-get update \
+    && rosdep update --rosdistro humble \
+    && rosdep install --from-paths /tmp/ws/src --ignore-src -y --rosdistro humble \
+         --skip-keys "ignition-gazebo6 ignition-plugin gz_ros2_control ros_gz_sim ros_gz_bridge ros_gz_image ros_gz_interfaces hsrb_meshes tmc_talk_hoya_py" \
+    || true
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libignition-gazebo6-dev libignition-plugin-dev libignition-transport11-dev \
+        libignition-msgs8-dev libignition-common4-dev libignition-math6-dev \
+        libignition-sensors6-dev libignition-rendering6-dev libignition-gui6-dev \
+        libignition-fuel-tools7-dev \
+    && rm -rf /var/lib/apt/lists/* /tmp/ws
+
+# --- python helpers used by the openpi ROS 2 client ------------------------
+RUN pip3 install --no-cache-dir "numpy<2" opencv-python-headless msgpack websockets tyro
+
+# --- user matching the host (uid 1000) so build artefacts stay writable -----
+ARG USER_NAME=hsr
+ARG USER_UID=1000
+ARG USER_GID=1000
+RUN groupadd -g ${USER_GID} ${USER_NAME} 2>/dev/null || true \
+    && useradd -m -u ${USER_UID} -g ${USER_GID} -s /bin/bash ${USER_NAME} 2>/dev/null || true \
+    && echo "${USER_NAME} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/${USER_NAME} \
+    && chmod 0440 /etc/sudoers.d/${USER_NAME}
+
+# --- rendering / gazebo runtime knobs --------------------------------------
+ENV NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=all \
+    IGN_PARTITION=hsr \
+    QT_X11_NO_MITSHM=1 \
+    RCUTILS_COLORIZED_OUTPUT=1 \
+    ROS_DOMAIN_ID=42
+
+COPY entrypoint-sim.sh /usr/local/bin/entrypoint-sim.sh
+RUN chmod +x /usr/local/bin/entrypoint-sim.sh
+
+USER ${USER_NAME}
+WORKDIR /home/hsr/hsr_ros2_ws
+ENTRYPOINT ["/usr/local/bin/entrypoint-sim.sh"]
+CMD ["bash"]

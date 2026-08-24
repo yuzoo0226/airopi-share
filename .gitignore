@@ -240,3 +240,10 @@ hostfile
 # experiment configs: track only example templates, ignore run-specific yamls
 configs/experiments/*.yaml
 !configs/experiments/example_*.yaml
+
+# --- ROS 2 deployment -------------------------------------------------------
+# locally generated docker build context (package.xml manifests for rosdep)
+docker/ros2/manifests/
+# CUDA compute cache written by the policy server container (HOME=/home/openpi)
+.nv/
+.cache/

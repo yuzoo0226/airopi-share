@@ -1,0 +1,13 @@
+# Topic layout of the Ignition Gazebo simulator (hsrb_gazebo_bringup).
+/**:
+  ros__parameters:
+    image_transport: raw
+    head_image_topic: /head_rgbd_sensor/rgb/image_rect_color
+    hand_image_topic: /hand_camera/image_raw
+    joint_states_topic: /joint_states
+    control_mode_topic: /control_mode
+    arm_command_topic: /arm_trajectory_controller/joint_trajectory
+    head_command_topic: /head_trajectory_controller/joint_trajectory
+    gripper_command_topic: /gripper_controller/joint_trajectory
+    base_command_topic: /omni_base_controller/cmd_vel
+    gripper_grasp_action: /gripper_controller/grasp

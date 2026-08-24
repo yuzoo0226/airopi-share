@@ -1,0 +1,6 @@
+# Update a string valued runtime setting (kept field compatible with the ROS 1
+# hsr_data_msgs/StringTrigger service used by the ROS 1 deployment).
+string message
+---
+string message
+bool success

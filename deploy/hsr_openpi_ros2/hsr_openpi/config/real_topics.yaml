@@ -1,0 +1,13 @@
+# Topic layout of the real HSR (hsrb bringup, /hsrb namespace).
+/**:
+  ros__parameters:
+    image_transport: compressed
+    head_image_topic: /hsrb/head_rgbd_sensor/rgb/image_rect_color/compressed
+    hand_image_topic: /hsrb/hand_camera/image_raw/compressed
+    joint_states_topic: /hsrb/joint_states
+    control_mode_topic: /control_mode
+    arm_command_topic: /hsrb/arm_trajectory_controller/joint_trajectory
+    head_command_topic: /hsrb/head_trajectory_controller/joint_trajectory
+    gripper_command_topic: /hsrb/gripper_controller/joint_trajectory
+    base_command_topic: /hsrb/omni_base_controller/cmd_vel
+    gripper_grasp_action: /hsrb/gripper_controller/grasp
