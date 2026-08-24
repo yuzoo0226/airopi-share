@@ -85,7 +85,7 @@ class WebsocketPolicyClient(BasePolicy):
     def __init__(
         self,
         host: str = "127.0.0.1",
-        port: Optional[int] = 8000,
+        port: Optional[int] = 8010,
         api_key: Optional[str] = None,
         *,
         connect_timeout_s: float = -1.0,
@@ -187,7 +187,7 @@ def create_policy(
     backend: str,
     *,
     host: str = "127.0.0.1",
-    port: int = 8000,
+    port: int = 8010,
     api_key: str = "",
     config_name: str = "",
     config_yaml: str = "",

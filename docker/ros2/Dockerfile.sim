@@ -49,11 +49,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Only the package.xml files are copied so this layer stays cached while the
 # actual sources change.
 COPY manifests/ /tmp/ws/src/
+# Keys skipped on purpose:
+#   hsrb_bringup .......... real robot only (hsrb_robot_launch is COLCON_IGNOREd)
+#   ignition-* ............ installed above from the OSRF repository
+#   gz_ros2_control, ros_gz_* ... built from source in src/_extern (no arm64 deb)
+#   roscpp ................ ros_gz ships a ROS 1 package (ros_gz_point_cloud)
 RUN apt-get update \
     && rosdep update --rosdistro humble \
     && rosdep install --from-paths /tmp/ws/src --ignore-src -y --rosdistro humble \
-         --skip-keys "ignition-gazebo6 ignition-plugin gz_ros2_control ros_gz_sim ros_gz_bridge ros_gz_image ros_gz_interfaces hsrb_meshes tmc_talk_hoya_py" \
-    || true
+         --skip-keys "hsrb_bringup roscpp ignition-gazebo6 ignition-plugin gz_ros2_control ros_gz_sim ros_gz_bridge ros_gz_image ros_gz_interfaces hsrb_meshes"
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libignition-gazebo6-dev libignition-plugin-dev libignition-transport11-dev \
         libignition-msgs8-dev libignition-common4-dev libignition-math6-dev \
@@ -74,6 +78,10 @@ RUN groupadd -g ${USER_GID} ${USER_NAME} 2>/dev/null || true \
     && chmod 0440 /etc/sudoers.d/${USER_NAME}
 
 # --- rendering / gazebo runtime knobs --------------------------------------
+USER ${USER_NAME}
+RUN rosdep update --rosdistro humble
+USER root
+
 ENV NVIDIA_VISIBLE_DEVICES=all \
     NVIDIA_DRIVER_CAPABILITIES=all \
     IGN_PARTITION=hsr \

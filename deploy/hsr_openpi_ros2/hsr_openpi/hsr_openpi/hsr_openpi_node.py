@@ -51,7 +51,7 @@ _PARAMETERS = (
     # -- policy backend ------------------------------------------------------
     ("policy_backend", "websocket"),
     ("policy_host", "127.0.0.1"),
-    ("policy_port", 8000),
+    ("policy_port", 8010),
     ("policy_api_key", ""),
     ("policy_connect_timeout", -1.0),
     ("config_name", ""),

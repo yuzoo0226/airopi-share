@@ -25,7 +25,6 @@ services:
         USER_GID: ${HOST_GID:-1000}
     network_mode: host
     ipc: host
-    pid: host
     privileged: true
     runtime: ${DOCKER_RUNTIME:-nvidia}
     stdin_open: true
@@ -64,7 +63,7 @@ services:
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
       - POLICY_CHECKPOINT_DIR=${POLICY_CHECKPOINT_DIR:-/home/openpi/checkpoints/airoa-pi05-hsr-base}
       - POLICY_SERVER_HOST=${POLICY_SERVER_HOST:-0.0.0.0}
-      - POLICY_SERVER_PORT=${POLICY_SERVER_PORT:-8000}
+      - POLICY_SERVER_PORT=${POLICY_SERVER_PORT:-8010}
       - POLICY_DEFAULT_PROMPT=${POLICY_DEFAULT_PROMPT:-Grasp the bottle.}
       - JAX_PLATFORMS=${JAX_PLATFORMS:-}
       - XLA_PYTHON_CLIENT_PREALLOCATE=false

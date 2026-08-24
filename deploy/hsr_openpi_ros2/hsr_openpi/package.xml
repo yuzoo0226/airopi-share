@@ -17,6 +17,9 @@
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
   <exec_depend>python3-opencv</exec_depend>
+  <!-- simulation bring-up wrapper (hsr_sim.launch.py) -->
+  <exec_depend>hsrb_gazebo_bringup</exec_depend>
+  <exec_depend>tmc_gazebo_worlds</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

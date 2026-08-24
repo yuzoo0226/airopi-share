@@ -29,7 +29,7 @@ _ARGS = (
     ("use_sim_time", "true", "Use the /clock published by Gazebo."),
     ("policy_backend", "websocket", "'websocket' (policy server) or 'local' (openpi in-process)."),
     ("policy_host", "127.0.0.1", "Policy server host."),
-    ("policy_port", "8000", "Policy server port."),
+    ("policy_port", "8010", "Policy server port."),
     ("policy_connect_timeout", "-1.0", "Seconds to wait for the policy server (-1 = forever)."),
     ("config_name", "", "Registered openpi TrainConfig name (policy_backend:=local)."),
     ("config_yaml", "", "Experiment YAML path (policy_backend:=local)."),

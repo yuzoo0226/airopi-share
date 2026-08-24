@@ -23,15 +23,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # --- python dependencies ----------------------------------------------------
-# Versions mirror pyproject.toml (including the [tool.uv] override-dependencies
-# for ml-dtypes / tensorstore).
+# NOTE on the JAX version: pyproject.toml pins jax[cuda12]==0.5.3, but the XLA
+# shipped with jaxlib 0.5.3 does not know sm_121 (NVIDIA GB10 / DGX Spark) and
+# dies with "Unsupported rounding mode for conversion" as soon as a float16 or
+# bfloat16 kernel is compiled — which pi0.5 inference does immediately, since
+# the params are restored as bfloat16. jaxlib 0.6.2 is the smallest bump that
+# compiles f32/f16/bf16 correctly on sm_121 while keeping numpy<2 (jax 0.7.2
+# already requires numpy>=2.0) and still resolving against flax 0.10.2 /
+# orbax-checkpoint 0.11.13. Override with --build-arg JAX_VERSION=... ; 0.5.3 is
+# fine on x86 Ampere/Hopper.
+# The ml-dtypes / tensorstore overrides from [tool.uv] are dropped on purpose:
+# they exist to satisfy the old jax pin and conflict with 0.6.x.
 ARG JAX_VARIANT=cuda12
+ARG JAX_VERSION=0.6.2
 RUN pip install --upgrade pip setuptools wheel
 
 RUN pip install \
-        "jax[${JAX_VARIANT}]==0.5.3" \
-        "ml-dtypes==0.4.1" \
-        "tensorstore==0.1.74" \
+        "jax[${JAX_VARIANT}]==${JAX_VERSION}" \
         "flax==0.10.2" \
         "orbax-checkpoint==0.11.13" \
         "numpy>=1.22.4,<2.0.0"
