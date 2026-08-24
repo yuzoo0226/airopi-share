@@ -32,6 +32,14 @@ dataset:
 
 model:
   type: pi05
+  # MUST match the released checkpoint. pi0 names the image encoders
+  #   shared   : every image key -> "img"
+  #   per_image: IMAGE_KEYS[0] -> "img", the others -> "img_<key>"
+  # airoa-pi05-hsr-base was trained with per_image, so loading it into a
+  # "shared" model silently keeps only the encoder behind IMAGE_KEYS[0] -
+  # which for HSR is the all-zero, masked-out base_0_rgb slot, i.e. essentially
+  # untouched PaliGemma weights - and drops the HSR-adapted hand/head encoders.
+  image_encoder_mode: per_image
   paligemma_variant: gemma_2b
   action_expert_variant: gemma_300m
   action_dim: 32

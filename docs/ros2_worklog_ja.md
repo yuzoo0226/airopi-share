@@ -311,6 +311,40 @@ Ignition が HSR の全カメラ（頭部 RGBD・ステレオ 2 台・head_cente
 10 fps のデータセットでは同じ画像が複数フレームで使われることがあります。
 不要なカメラを URDF から外すのが根本対処です。
 
+### 4.5 学習設定
+
+**(y) `image_encoder_mode` を公開チェックポイントに合わせないと視覚重みが落ちる**
+
+pi0 は画像エンコーダのモジュール名を次のように決めます
+(`src/openpi/models/pi0.py::_image_encoder_module_name`)。
+
+| `image_encoder_mode` | モジュール名 |
+| --- | --- |
+| `shared` (既定) | 全ての画像キー → `img` |
+| `per_image` | `IMAGE_KEYS[0]` → `img`、それ以外 → `img_<key>` |
+
+`airoa-pi05-hsr-base` は **`per_image`** で学習されています。自前の YAML で
+`image_encoder_mode` を書き忘れると既定の `shared` になり、
+`CheckpointWeightLoader` は名前が一致する `PaliGemma/img/...` だけを読み込みます。
+HSR の場合 `IMAGE_KEYS[0]` は **ゼロ埋めしてマスクした `base_0_rgb`** のスロットなので、
+
+* 実際に使われる hand / head 用の HSR 適応済みエンコーダ
+  (`img_left_wrist_0_rgb`, `img_right_wrist_0_rgb`) は**捨てられ**、
+* ほぼ素の PaliGemma 重みだけが載る
+
+という状態になります。エラーも警告も出ません。
+
+見分け方は step 0 の `param_norm` です。
+
+```
+shared    : param_norm=2019.61
+per_image : param_norm=2228.31
+```
+
+`configs/experiments/example_hsr_*.yaml` では `model.image_encoder_mode:
+per_image` を明示しています。**推論側は影響を受けません**
+（サーバはチェックポイント同梱の `experiment_config.yaml` を自動検出するため）。
+
 ---
 
 ## 5. 別 PC へ移すときのチェックリスト
