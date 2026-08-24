@@ -82,18 +82,15 @@ while ! docker exec "${SIM_CONTAINER}" bash -lc "test -f ${BAG_DIR}/eval_${TAG}/
 done
 sim "grep -aE 'success=' /tmp/eval_${TAG}.log | tail -3" || true
 docker exec "${SIM_CONTAINER}" bash -lc "cat ${BAG_DIR}/eval_${TAG}.json" \
-    | python3 -c "
-import json,sys
-d=json.load(sys.stdin)
-print(f\"[RESULT] {TAG}: {d['success']}/{d['episodes']} = {100*d['success_rate']:.1f}%\".replace('TAG','${TAG}'))
-for k,v in sorted(d['per_object'].items()):
-    print(f'   {k:16s} {v[\"ok\"]:3d}/{v[\"n\"]:3d}')
-" || true
+    | python3 "${HERE}/print_eval_result.py" "${TAG}" || true
 
 echo "[4/4] video"
+# The simulator writes bags to ${BAG_DIR}; docker/ros2/docker-compose.train.yml
+# mounts that same host directory at /home/bags inside the training container.
+TRAIN_BAG_DIR="${TRAIN_BAG_DIR:-/home/bags}"
 docker exec "${TRAIN_CONTAINER}" bash -lc "
     cd /home/openpi && /home/cache/venv/bin/python deploy/hsr_openpi_ros2/tools/bag2video.py \
-        --bag ${BAG_DIR/\/home\/hsr\/hsr_ros2_ws/\/home\/bags}/eval_${TAG} \
+        --bag ${TRAIN_BAG_DIR}/eval_${TAG} \
         --out ${VIDEO_DIR}/02_inference_${TAG}.mp4 \
         --max-episodes 4 --fps 15 --title 'policy inference (${TAG})'" || \
     echo "[WARN] video rendering failed (is the bag directory visible to ${TRAIN_CONTAINER}?)"
