@@ -14,6 +14,7 @@ setup(
         (os.path.join("share", package_name), ["package.xml"]),
         (os.path.join("share", package_name, "launch"), glob("launch/*.launch.py")),
         (os.path.join("share", package_name, "config"), glob("config/*.yaml")),
+        (os.path.join("share", package_name, "worlds"), glob("worlds/*.sdf")),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
@@ -28,6 +29,7 @@ setup(
             "reset_pose = hsr_openpi.reset_pose:main",
             "control_mode_publisher = hsr_openpi.control_mode_publisher:main",
             "random_motion = hsr_openpi.random_motion:main",
+            "pick_task = hsr_openpi.pick_task:main",
         ],
     },
 )

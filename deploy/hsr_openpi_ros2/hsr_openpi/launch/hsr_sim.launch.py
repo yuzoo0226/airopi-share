@@ -29,6 +29,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
+from launch_ros.actions import Node
 
 _ARGS = (
     ("world", "empty", "World name inside tmc_gazebo_worlds, or an absolute .world/.sdf path."),
@@ -38,19 +39,28 @@ _ARGS = (
     ("robot_pos_z", "0.0", "Initial robot z position."),
     ("robot_rpy_Y", "0.0", "Initial robot yaw."),
     ("robot_name", "hsrb", "Robot name (hsrb / hsrc)."),
+    ("scene_camera", "false", "Bridge the world's third person camera to /scene_camera/image."),
 )
 
 
 def _resolve_world(name: str) -> str:
+    """Look in this package's worlds first, then in tmc_gazebo_worlds."""
     if os.path.isabs(name):
         return name
-    worlds_dir = os.path.join(get_package_share_directory("tmc_gazebo_worlds"), "worlds")
-    for candidate in (name, f"{name}.world", f"{name}.sdf"):
-        path = os.path.join(worlds_dir, candidate)
-        if os.path.exists(path):
-            return path
-    available = sorted(f for f in os.listdir(worlds_dir) if f.endswith((".world", ".sdf")))
-    raise RuntimeError(f"World '{name}' not found in {worlds_dir}. Available: {', '.join(available)}")
+    dirs = [
+        os.path.join(get_package_share_directory("hsr_openpi"), "worlds"),
+        os.path.join(get_package_share_directory("tmc_gazebo_worlds"), "worlds"),
+    ]
+    available = []
+    for worlds_dir in dirs:
+        if not os.path.isdir(worlds_dir):
+            continue
+        for candidate in (name, f"{name}.world", f"{name}.sdf"):
+            path = os.path.join(worlds_dir, candidate)
+            if os.path.exists(path):
+                return path
+        available += sorted(f for f in os.listdir(worlds_dir) if f.endswith((".world", ".sdf")))
+    raise RuntimeError(f"World '{name}' not found in {dirs}. Available: {', '.join(available)}")
 
 
 def _launch_setup(context, *args, **kwargs):
@@ -64,7 +74,19 @@ def _launch_setup(context, *args, **kwargs):
     bringup = os.path.join(
         get_package_share_directory("hsrb_gazebo_bringup"), "launch", f"{robot_name}_gazebo_bringup.launch.py"
     )
-    return [
+    actions = []
+    if LaunchConfiguration("scene_camera").perform(context).lower() in ("1", "true", "yes"):
+        actions.append(
+            Node(
+                package="ros_gz_bridge",
+                executable="parameter_bridge",
+                name="scene_camera_bridge",
+                output="log",
+                arguments=["/scene_camera/image@sensor_msgs/msg/Image[ignition.msgs.Image"],
+                parameters=[{"use_sim_time": True}],
+            )
+        )
+    return actions + [
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(bringup),
             launch_arguments={

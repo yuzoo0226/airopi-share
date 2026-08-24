@@ -1,22 +1,30 @@
 #!/usr/bin/env python3
-"""Record a ROS 2 bag of the HSR moving randomly in Gazebo.
+"""Record a ROS 2 bag while a scripted driver moves the HSR in Gazebo.
 
-Starts three things:
+Two drivers are available:
 
-1. ``image_transport republish`` for both cameras, so the bag carries
-   ``.../compressed`` topics with the same names the real robot records
-   (Ignition only publishes raw images, and raw 640x480 frames make the bag
-   roughly 30x bigger).
-2. ``hsr_random_motion``, which drives the arm / head / gripper / base with a
-   clamped Ornstein-Uhlenbeck random walk and publishes ``/control_mode``.
-3. ``ros2 bag record`` on the topic set that
-   ``deploy/hsr_openpi_ros2/tools/rosbag2_to_lerobot.py`` consumes.
+``pick``    (default) ``hsr_pick_task`` - spawns one of ten objects at a random
+            pose on a table and performs a scripted top-down pick. This is the
+            demonstration data the policy is trained on.
+``random``  ``hsr_random_motion`` - a clamped Ornstein-Uhlenbeck random walk over
+            every joint; useful for smoke testing the pipeline.
+
+The launch also starts:
+
+* ``image_transport republish`` for both cameras, so the bag carries the
+  ``.../compressed`` topic names the real robot records (and is ~30x smaller);
+* a ``ros_gz_bridge`` for Gazebo's ``dynamic_pose`` stream, which the pick task
+  needs to see where the object actually is;
+* ``ros2 bag record``.
+
+The driver exits when it has finished its episodes and an OnProcessExit handler
+tears the launch down, which sends SIGINT to the recorder - rosbag2 only writes
+metadata.yaml on SIGINT.
 
 Example
 -------
-    ros2 launch hsr_openpi collect_data.launch.py \
-        bag_path:=/home/hsr/hsr_ros2_ws/_bags/random_01 \
-        num_episodes:=5 episode_duration:=30.0 task:="move the arm around randomly"
+    ros2 launch hsr_openpi collect_data.launch.py driver:=pick \
+        bag_path:=/home/hsr/hsr_ros2_ws/_bags/pick_001 num_episodes:=100 seed:=1
 """
 
 import os
@@ -36,6 +44,7 @@ from launch_ros.actions import Node
 
 HEAD_RAW = "/head_rgbd_sensor/rgb/image_rect_color"
 HAND_RAW = "/hand_camera/image_raw"
+GZ_POSE_TOPIC = "/gz/dynamic_pose"
 
 RECORD_TOPICS = [
     "/clock",
@@ -52,21 +61,29 @@ RECORD_TOPICS = [
     "/tf",
     "/tf_static",
     "/control_mode",
+    "/hsr_pick_task/episode",
     "/hsr_random_motion/episode",
+    GZ_POSE_TOPIC,
 ]
 
 _ARGS = (
-    ("bag_path", "/home/hsr/hsr_ros2_ws/_bags/random", "Output bag directory (must not exist)."),
-    ("storage", "mcap", "rosbag2 storage plugin: 'mcap' or 'sqlite3'."),
-    ("num_episodes", "5", "Number of episodes to record (0 = until stopped)."),
-    ("episode_duration", "30.0", "Seconds of random motion per episode."),
-    ("reset_duration", "6.0", "Seconds spent returning to the start pose between episodes."),
-    ("update_freq", "10.0", "Command rate [Hz]; also the rate the dataset is resampled to."),
+    ("driver", "pick", "Scripted driver: 'pick' or 'random'."),
+    ("bag_path", "/home/hsr/hsr_ros2_ws/_bags/pick", "Output bag directory (must not exist)."),
+    ("storage", "mcap", "rosbag2 storage plugin."),
+    ("num_episodes", "10", "Episodes to record (0 = until stopped)."),
     ("seed", "0", "Random seed."),
-    ("move_base", "true", "Also drive the omni base."),
-    ("task", "move the arm around randomly", "Task string stored as the LeRobot task / prompt."),
-    ("record", "true", "Set to false to drive the robot without recording."),
+    ("record", "true", "Set false to drive without recording."),
     ("use_sim_time", "true", "Use the /clock published by Gazebo."),
+    ("world", "default", "Ignition world name."),
+    # pick driver
+    ("close_time", "2.2", "Seconds spent closing the gripper (includes the grasp fix respawn)."),
+    ("objects", "", "Comma separated subset of the object library (empty = all ten)."),
+    ("results_path", "", "Where the per-episode success log is written."),
+    # random driver
+    ("episode_duration", "30.0", "Random driver: seconds of motion per episode."),
+    ("reset_duration", "6.0", "Random driver: seconds spent returning to the start pose."),
+    ("update_freq", "10.0", "Command rate [Hz]."),
+    ("task", "move the arm around randomly", "Random driver: task string."),
 )
 
 
@@ -74,6 +91,8 @@ def _launch_setup(context, *args, **kwargs):
     cfg = LaunchConfiguration
     bag_path = cfg("bag_path").perform(context)
     storage = cfg("storage").perform(context)
+    driver = cfg("driver").perform(context).lower()
+    world = cfg("world").perform(context)
     do_record = cfg("record").perform(context).lower() in ("1", "true", "yes")
 
     actions = []
@@ -92,7 +111,45 @@ def _launch_setup(context, *args, **kwargs):
             )
         )
 
-    motion_node = Node(
+    # Ground-truth model poses: the pick task uses them to place objects and to
+    # judge whether one was actually lifted.
+    actions.append(
+        Node(
+            package="ros_gz_bridge",
+            executable="parameter_bridge",
+            name="gz_pose_bridge",
+            output="log",
+            # ros_gz_bridge names the ROS side after the Gazebo topic; the ROS
+            # remap has to use the fully qualified name it actually creates.
+            arguments=[f"/world/{world}/dynamic_pose/info@tf2_msgs/msg/TFMessage[ignition.msgs.Pose_V"],
+            remappings=[(f"/world/{world}/dynamic_pose/info", GZ_POSE_TOPIC)],
+            parameters=[{"use_sim_time": cfg("use_sim_time")}],
+        )
+    )
+
+    if driver == "pick":
+        objects = [o for o in cfg("objects").perform(context).split(",") if o]
+        params = {
+            "use_sim_time": cfg("use_sim_time"),
+            "num_episodes": cfg("num_episodes"),
+            "seed": cfg("seed"),
+            "world": cfg("world"),
+            "close_time": cfg("close_time"),
+            "results_path": cfg("results_path"),
+            "object_pose_topic": GZ_POSE_TOPIC,
+        }
+        if objects:
+            params["objects"] = objects
+        driver_node = Node(
+            package="hsr_openpi",
+            executable="pick_task",
+            name="hsr_pick_task",
+            output="screen",
+            emulate_tty=True,
+            parameters=[params],
+        )
+    else:
+        driver_node = Node(
             package="hsr_openpi",
             executable="random_motion",
             name="hsr_random_motion",
@@ -106,19 +163,17 @@ def _launch_setup(context, *args, **kwargs):
                     "reset_duration": cfg("reset_duration"),
                     "update_freq": cfg("update_freq"),
                     "seed": cfg("seed"),
-                    "move_base": cfg("move_base"),
                     "task": cfg("task"),
                 }
             ],
-    )
-    actions.append(motion_node)
-    # random_motion exits once num_episodes are done; tearing the launch down
-    # from there sends SIGINT to `ros2 bag record`, which is what makes it write
-    # metadata.yaml. Killing the recorder instead leaves a bag that neither
-    # `ros2 bag info` nor the converter can open without a manual reindex.
+        )
+    actions.append(driver_node)
     actions.append(
         RegisterEventHandler(
-            OnProcessExit(target_action=motion_node, on_exit=[EmitEvent(event=Shutdown(reason="collection finished"))])
+            OnProcessExit(
+                target_action=driver_node,
+                on_exit=[EmitEvent(event=Shutdown(reason="collection finished"))],
+            )
         )
     )
 

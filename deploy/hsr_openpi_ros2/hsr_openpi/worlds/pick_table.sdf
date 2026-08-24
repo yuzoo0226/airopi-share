@@ -1,0 +1,115 @@
+<?xml version="1.0" ?>
+<!--
+  World for the HSR pick task.
+
+  Differences from tmc_gazebo_worlds/empty.world:
+
+  * DART's **bullet** collision detector instead of the default ODE one. The ODE
+    detector aborts (dDebug -> abort, exit code 134) partway through a long
+    collection run, taking the whole simulator down; bullet survives the same
+    workload.
+  * The table is part of the world instead of being spawned, so a restart always
+    reproduces the same scene.
+  * A fixed scene camera looking at the workspace, for third person recordings.
+-->
+<sdf version="1.7">
+  <world name="default">
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics">
+      <collision_detector>bullet</collision_detector>
+    </plugin>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors"/>
+    <plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu"/>
+    <plugin filename="ignition-gazebo-forcetorque-system" name="ignition::gazebo::systems::ForceTorque"/>
+
+    <gravity>0 0 -9.8</gravity>
+    <physics name="5ms" type="ignored">
+      <max_step_size>0.005</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+    <scene>
+      <shadows>0</shadows>
+      <ambient>0.55 0.55 0.55 1</ambient>
+      <background>0.75 0.78 0.82 1</background>
+    </scene>
+
+    <light name="sun" type="directional">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.85 0.85 0.85 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <attenuation><range>1000</range><constant>0.9</constant><linear>0.01</linear><quadratic>0.001</quadratic></attenuation>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+    <light name="fill" type="directional">
+      <cast_shadows>false</cast_shadows>
+      <pose>2 -2 4 0 0 0</pose>
+      <diffuse>0.35 0.35 0.38 1</diffuse>
+      <specular>0.05 0.05 0.05 1</specular>
+      <direction>0.4 0.6 -0.7</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal><size>30 30</size></plane></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>30 30</size></plane></geometry>
+          <material><ambient>0.55 0.55 0.55 1</ambient><diffuse>0.6 0.6 0.6 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Back wall, so the head camera sees something other than empty sky. -->
+    <model name="back_wall">
+      <static>true</static>
+      <pose>2.6 0 1.2 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>0.1 6.0 2.4</size></box></geometry></collision>
+        <visual name="visual">
+          <geometry><box><size>0.1 6.0 2.4</size></box></geometry>
+          <material><ambient>0.72 0.70 0.66 1</ambient><diffuse>0.78 0.76 0.72 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Counter style table: solid to the floor, so the base stops in front of
+         it and objects have to be picked from within reach of the near edge. -->
+    <model name="pick_table">
+      <static>true</static>
+      <pose>1.725 0 0.21 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.35 1.8 0.42</size></box></geometry>
+          <surface><friction><ode><mu>1.2</mu><mu2>1.2</mu2></ode></friction></surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.35 1.8 0.42</size></box></geometry>
+          <material><ambient>0.62 0.55 0.45 1</ambient><diffuse>0.70 0.62 0.50 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Third person camera for recordings. -->
+    <model name="scene_camera">
+      <static>true</static>
+      <pose>0.15 -2.05 1.55 0 0.42 1.07</pose>
+      <link name="link">
+        <sensor name="scene_camera" type="camera">
+          <camera>
+            <horizontal_fov>1.15</horizontal_fov>
+            <image><width>640</width><height>480</height><format>R8G8B8</format></image>
+            <clip><near>0.1</near><far>30</far></clip>
+          </camera>
+          <always_on>1</always_on>
+          <update_rate>15</update_rate>
+          <visualize>false</visualize>
+          <topic>scene_camera/image</topic>
+        </sensor>
+      </link>
+    </model>
+  </world>
+</sdf>

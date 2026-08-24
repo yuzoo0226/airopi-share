@@ -9,11 +9,26 @@
 set -uo pipefail
 
 CONTAINER="${HSR_SIM_CONTAINER:-hsr-ros2-sim}"
-NODE_ONLY=0
-[[ "${1:-}" == "--node" ]] && NODE_ONLY=1
+MODE="${1:-all}"
 
-if [[ "${NODE_ONLY}" == "1" ]]; then
+if [[ "${MODE}" == "--node" ]]; then
+    # only the openpi inference node
     PATTERNS=('hsr_openpi_nod[e]' 'hsr_openpi\.launc[h]')
+elif [[ "${MODE}" == "--collect" ]]; then
+    # data collection / evaluation only - leave the simulator and, crucially,
+    # its own ros_gz parameter_bridge running. That bridge carries /clock, so
+    # killing every "parameter_bridge" process freezes simulation time for every
+    # node with use_sim_time and everything silently stops.
+    PATTERNS=(
+        'pick_tas[k]'
+        'random_motio[n]'
+        'rosbag2_recorde[r]'
+        'ros2 ba[g] record'
+        'collect_data\.launc[h]'
+        'eval_pick\.launc[h]'
+        'republis[h]'
+        'dynamic_pos[e]'
+    )
 else
     PATTERNS=(
         'hsr_openpi_nod[e]'
