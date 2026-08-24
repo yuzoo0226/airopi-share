@@ -58,25 +58,25 @@ training:
   # Measured on the GB10 (one GPU, unified memory): ~2.8 samples/s, i.e. 5.7 s
   # per step at batch 16 and 1.7 s at batch 4 - compute bound, not data bound
   # (8 dataloader workers change nothing and the 591 MB dataset is page cached).
-  # 9204 frames / 16 = 576 steps per epoch, so one epoch takes ~55 minutes.
+  # 7726 frames / 16 = 483 steps per epoch, so one epoch takes ~47 minutes.
   batch_size: 16
   num_workers: 8
   pin_memory: true
   prefetch_factor: 4
-  num_train_steps: 57600      # 100 epochs
+  num_train_steps: 48300      # 100 epochs
   val_split_fraction: 0.05
   val_split_seed: 42
-  eval_interval: 1152         # every 2 epochs
+  eval_interval: 966          # every 2 epochs
   eval_num_batches: 4
   eval_num_sample_steps: 10
-  save_interval: 1152         # every 2 epochs
-  keep_period: 5760           # keep every 10th epoch permanently
+  save_interval: 966          # every 2 epochs
+  keep_period: 4830           # keep every 10th epoch permanently
   log_interval: 50
   lr_schedule:
     type: cosine_decay
     warmup_steps: 1000
     peak_lr: 5.0e-5
-    decay_steps: 57600
+    decay_steps: 48300
     decay_lr: 5.0e-6
 
 gpu:

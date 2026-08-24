@@ -474,6 +474,14 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     p.add_argument("--max-episodes", type=int, default=0, help="0 = all.")
     p.add_argument("--overwrite", action="store_true", help="Delete an existing output dataset.")
     p.add_argument("--topics-json", type=pathlib.Path, default=None, help="JSON overriding the topic names.")
+    p.add_argument(
+        "--results-json",
+        type=pathlib.Path,
+        default=None,
+        help="Per-episode result file written by hsr_pick_task. When given, only "
+        "episodes it marks successful are converted - failed demonstrations teach "
+        "the policy to fail.",
+    )
     return p.parse_args(argv)
 
 
@@ -492,6 +500,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     series = read_bag(args.bag, topics)
     episodes = segment_episodes(series, args.task)
     logger.info("found %d episode(s)", len(episodes))
+
+    if args.results_json:
+        results = json.loads(args.results_json.read_text())
+        ok = {int(r["episode"]) for r in results.get("results", []) if r.get("success")}
+        before = len(episodes)
+        episodes = [e for e in episodes if e.index in ok]
+        logger.info(
+            "success filter: kept %d/%d episodes (%d failed demonstrations dropped)",
+            len(episodes), before, before - len(episodes),
+        )
     if args.max_episodes:
         episodes = episodes[: args.max_episodes]
 
