@@ -27,6 +27,7 @@ setup(
             "hsr_openpi_node = hsr_openpi.hsr_openpi_node:main",
             "reset_pose = hsr_openpi.reset_pose:main",
             "control_mode_publisher = hsr_openpi.control_mode_publisher:main",
+            "random_motion = hsr_openpi.random_motion:main",
         ],
     },
 )

@@ -238,6 +238,79 @@ BGR がポリシーに入る、という取り違えが起きます。
 `policy_image_order`（既定 `bgr`）へ正規化する実装に変更しました。
 詳細は [`ros2_deploy_ja.md`](ros2_deploy_ja.md) の 6.1。
 
+### 4.4 データ収集 / 変換 / 学習
+
+**(r) `ros2 bag record` を kill すると bag が壊れる**
+
+rosbag2 は **SIGINT を受けたときにだけ** `metadata.yaml` を書きます。
+`kill -9` すると
+
+```
+Could not find metadata in bag directory .../test01
+```
+
+となり `ros2 bag info` も変換スクリプトも開けません。
+`ros2 bag reindex <dir> -s mcap` で復旧できます
+（`no message indices found, falling back to reading in file order` という
+警告は出ますが読めるようになります）。
+`collect_data.launch.py` は `hsr_random_motion` の終了を `OnProcessExit` で
+拾って launch 全体を `Shutdown` させ、レコーダに SIGINT が届くようにしています。
+
+**(s) `uv run` が環境を巻き戻す**
+
+`uv run <cmd>`（`--no-sync` なし）は実行前に環境を `uv.lock` に同期し直します。
+その結果、
+
+* GB200 オーバーレイで入れた `torch 2.10.0+cu128` が `2.7.1+cpu` に戻る
+* あとから `uv pip install` したパッケージ（`rosbags` など）が消える
+
+という事故が起きます（実際に `Uninstalled 18 packages / Installed 18 packages`
+が出ました）。`${UV_PROJECT_ENVIRONMENT}/bin/python` を直接呼ぶか
+`uv run --no-sync` を使ってください。
+
+**(t) `uv pip install` がプロジェクトの override を引きずる**
+
+プロジェクトディレクトリ内で実行した `uv pip install` は
+`pyproject.toml` の `[tool.uv] override-dependencies`
+（`ml-dtypes==0.4.1`, `tensorstore==0.1.74`）を適用します。
+jax 0.6.2 は `ml_dtypes>=0.5` を要求するため、プロジェクト内で入れると
+
+```
+AttributeError: module 'ml_dtypes' has no attribute 'float8_e3m4'
+```
+
+で jax が import できません。`cd /` してから入れる必要があります
+（`scripts/ros2/apply_sm121_jax_overlay.sh` がこれを行います）。
+なお jax 0.6.2 を入れると numpy が 2.x に上がるので、最後に `numpy<2` を
+入れ直します。
+
+**(u) 学習側の jax も sm_121 対応版が必要**
+
+推論サーバと同じ理由で、学習コンテナの `uv.lock` 由来の jax 0.5.3 も
+sm_121 では bf16 を扱えません。`scripts/ros2/apply_sm121_jax_overlay.sh` で
+0.6.2 + orbax 0.11.14 に上げます。
+
+**(v) LeRobot 0.1.0 の `save_episode()` に `task` 引数が無い**
+
+openpi が pin している LeRobot revision では、自然言語タスクは
+**フレームごと**に `add_frame({... , "task": "..."})` として渡し、
+`save_episode()` は引数なしで呼びます。
+`save_episode(task=...)` と書くと `TypeError` になります。
+
+**(w) 学習コンテナに checkpoints ディレクトリがマウントされていない**
+
+`docker/docker-compose.yml` はリポジトリとデータセットしかマウントしないため、
+`weight_loader.params_path` にローカルのベースモデルを指定できません。
+`docker/ros2/docker-compose.train.yml`（override）で `/home/checkpoints` と
+`/home/bags` を足しています。
+
+**(x) ハンドカメラのレンダリングが遅い**
+
+Ignition が HSR の全カメラ（頭部 RGBD・ステレオ 2 台・head_center・ハンド）を
+レンダリングするため、ハンドカメラは 6〜9 Hz しか出ません。
+10 fps のデータセットでは同じ画像が複数フレームで使われることがあります。
+不要なカメラを URDF から外すのが根本対処です。
+
 ---
 
 ## 5. 別 PC へ移すときのチェックリスト

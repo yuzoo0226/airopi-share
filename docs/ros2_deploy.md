@@ -7,6 +7,7 @@ loop.
 
 > 日本語版: [`ros2_deploy_ja.md`](ros2_deploy_ja.md)
 > Build log / known pitfalls (JA): [`ros2_worklog_ja.md`](ros2_worklog_ja.md)
+> Data collection & training (JA): [`ros2_data_collection_ja.md`](ros2_data_collection_ja.md)
 
 ---
 

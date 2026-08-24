@@ -41,6 +41,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ros-humble-xacro ros-humble-joint-state-publisher \
         ros-humble-depth-image-proc ros-humble-topic-tools \
         ros-humble-image-transport-plugins ros-humble-compressed-image-transport \
+        ros-humble-rosbag2 ros-humble-ros2bag ros-humble-rosbag2-py \
+        ros-humble-rosbag2-storage-mcap ros-humble-rosbag2-storage-default-plugins \
         ros-humble-rviz2 ros-humble-rqt-image-view \
         libegl1 libgl1-mesa-dri libglx-mesa0 mesa-utils xvfb x11-apps xauth \
     && rm -rf /var/lib/apt/lists/*

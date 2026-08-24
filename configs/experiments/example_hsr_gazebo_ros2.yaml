@@ -1,0 +1,96 @@
+# Fine-tune pi0.5 on data collected in the ROS 2 / Ignition Gazebo HSR simulator.
+#
+# The dataset is produced by
+#   ros2 launch hsr_openpi collect_data.launch.py ...        (records a ROS 2 bag)
+#   deploy/hsr_openpi_ros2/tools/rosbag2_to_lerobot.py ...   (bag -> LeRobot v2.1)
+#
+# This config is sized for a single GPU and a short smoke run; raise
+# num_train_steps / batch_size for a real run.
+experiment:
+  name: example_hsr_gazebo_ros2
+  project_name: openpi
+  seed: 42
+  wandb_enabled: false
+
+dataset:
+  repo_id: lerobot_datasets/hsr_gazebo_random
+  data_dir: /home/datasets/lerobot_datasets/hsr_gazebo_random
+  assets_dir: ./assets/example_hsr_gazebo_ros2
+  asset_id: lerobot_datasets/hsr_gazebo_random
+  prompt_from_task: true
+  action_mode: relative
+  fast_lerobot: true
+  lerobot_backend: parquet
+  lerobot_checks: none
+  # The converter stores frames as PNG inside the parquet (use_videos=False), so
+  # no video decoder is involved; the backend is only kept for compatibility.
+  video_backend: torchcodec
+  adapt_to_pi: true
+  convert_gripper: false
+  base_action_dim: 3
+
+model:
+  type: pi05
+  paligemma_variant: gemma_2b
+  action_expert_variant: gemma_300m
+  action_dim: 32
+  action_horizon: 16
+  finetune_recipe:
+    freeze_text_tower: true
+    train_action_expert: true
+    train_action_head: true
+    vision_lora:
+      enabled: true
+      rank: 16
+      alpha: 16.0
+      targets: [patch_embedding, attention, mlp, head]
+
+training:
+  batch_size: 4
+  num_workers: 2
+  pin_memory: true
+  prefetch_factor: 2
+  num_train_steps: 200
+  val_split_fraction: 0.1
+  val_split_seed: 42
+  eval_interval: 100
+  eval_num_batches: 2
+  eval_num_sample_steps: 10
+  save_interval: 100
+  keep_period: 100
+  log_interval: 10
+  lr_schedule:
+    type: cosine_decay
+    warmup_steps: 20
+    peak_lr: 2.5e-5
+    decay_steps: 200
+    decay_lr: 2.5e-6
+
+gpu:
+  num_gpus: 1
+  base_gpus: 1
+  fsdp_devices: 1
+
+scaling:
+  base_batch_size: 4
+  scale_batch_size: false
+  scale_learning_rate: false
+  scale_train_steps: false
+  workers_per_gpu: 1
+
+task_sampler:
+  kind: uniform
+  alpha: 1.0
+  ema_decay: 0.9
+  min_prob: 0.0
+  eps: 1.0e-6
+
+weight_loader:
+  type: checkpoint
+  # Start from the released HSR base model instead of the generic pi0.5 base.
+  # /home/checkpoints comes from docker/ros2/docker-compose.train.yml
+  params_path: /home/checkpoints/airoa-pi05-hsr-base/params
+
+checkpoints:
+  base_model:
+    pi05: gs://openpi-assets/checkpoints/pi05_base/params

@@ -1,0 +1,19 @@
+# Compose override for the training container used by the ROS 2 workflow.
+#
+# docker/docker-compose.yml mounts the repository and the dataset directory but
+# not the checkpoint directory, so a YAML with
+# `weight_loader.params_path: /home/checkpoints/<run>/params` (fine-tuning from a
+# locally downloaded base model) cannot resolve. This override adds it.
+#
+# Usage:
+#   export DEEP_PROJECT_NAME=airopi_ros2 CONTAINER=airopi_ros2_deep_1
+#   export DEEP_IMAGE_TAG=train-gb200 DEEP_DOCKERFILE=./docker/Dockerfile.train.gb200
+#   export DEEP_DATASET_PATH=<...>/datasets DEEP_CACHE_ROOT_HOST=<...>/.docker_cache
+#   export DEEP_CHECKPOINT_PATH=<...>/checkpoints
+#   docker compose -p "$DEEP_PROJECT_NAME" \
+#       -f docker/docker-compose.yml -f docker/ros2/docker-compose.train.yml up -d
+services:
+  deep:
+    volumes:
+      - ${DEEP_CHECKPOINT_PATH:-../../../checkpoints}:/home/checkpoints
+      - ${DEEP_BAG_PATH:-../../../hsr_ros2_ws/_bags}:/home/bags:ro

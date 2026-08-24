@@ -20,6 +20,11 @@
   <!-- simulation bring-up wrapper (hsr_sim.launch.py) -->
   <exec_depend>hsrb_gazebo_bringup</exec_depend>
   <exec_depend>tmc_gazebo_worlds</exec_depend>
+  <!-- data collection (collect_data.launch.py) -->
+  <exec_depend>image_transport</exec_depend>
+  <exec_depend>compressed_image_transport</exec_depend>
+  <exec_depend>rosbag2_storage_mcap</exec_depend>
+  <exec_depend>ros2bag</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
