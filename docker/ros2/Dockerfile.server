@@ -22,6 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         git curl ca-certificates libgl1 libglib2.0-0 procps \
     && rm -rf /var/lib/apt/lists/*
 
+
 # --- python dependencies ----------------------------------------------------
 # NOTE on the JAX version: pyproject.toml pins jax[cuda12]==0.5.3, but the XLA
 # shipped with jaxlib 0.5.3 does not know sm_121 (NVIDIA GB10 / DGX Spark) and
@@ -30,23 +31,36 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # the params are restored as bfloat16. jaxlib 0.6.2 is the smallest bump that
 # compiles f32/f16/bf16 correctly on sm_121 while keeping numpy<2 (jax 0.7.2
 # already requires numpy>=2.0) and still resolving against flax 0.10.2 /
-# orbax-checkpoint 0.11.13. Override with --build-arg JAX_VERSION=... ; 0.5.3 is
+# orbax-checkpoint 0.11.14. Override with --build-arg JAX_VERSION=... ; 0.5.3 is
 # fine on x86 Ampere/Hopper.
 # The ml-dtypes / tensorstore overrides from [tool.uv] are dropped on purpose:
 # they exist to satisfy the old jax pin and conflict with 0.6.x.
+# orbax-checkpoint 0.11.13 (the pyproject pin) still references
+# jax.experimental.layout.DeviceLocalLayout, which jax 0.6 renamed, so it fails
+# to import here; 0.11.14 is the first release that works with jax 0.6.2.
 ARG JAX_VARIANT=cuda12
 ARG JAX_VERSION=0.6.2
+ARG ORBAX_VERSION=0.11.14
 RUN pip install --upgrade pip setuptools wheel
+
+# Transitive dependencies silently move jax and numpy in later layers (chex, for
+# example, pulls jax 0.7.x, which orbax 0.11.14 then fails to import against). A
+# global pip constraint file pins the whole image to one consistent set.
+RUN printf 'numpy<2\njax==%s\njaxlib==%s\norbax-checkpoint==%s\nflax==0.10.2\n' \
+        "${JAX_VERSION}" "${JAX_VERSION}" "${ORBAX_VERSION}" > /etc/pip-constraints.txt \
+    && cat /etc/pip-constraints.txt
+ENV PIP_CONSTRAINT=/etc/pip-constraints.txt
 
 RUN pip install \
         "jax[${JAX_VARIANT}]==${JAX_VERSION}" \
         "flax==0.10.2" \
-        "orbax-checkpoint==0.11.13" \
+        "orbax-checkpoint==${ORBAX_VERSION}" \
         "numpy>=1.22.4,<2.0.0"
 
 RUN pip install \
         "augmax>=0.3.4" \
         "beartype==0.19.0" \
+        "chex>=0.1.86" \
         "dm-tree>=0.1.8" \
         "einops>=0.8.0" \
         "equinox>=0.11.8" \
@@ -71,6 +85,11 @@ RUN pip install \
         "typing-extensions>=4.12.2" \
         "tyro>=0.9.5" \
         "websockets>=11.0"
+
+# openpi/models/model.py imports torch unconditionally (it is only used by the
+# `load_pytorch` path), so the JAX-only server still needs it importable. The
+# aarch64 wheel on PyPI is the ~100 MB CPU build and pulls no CUDA runtime.
+RUN pip install "torch==2.7.1" "pytest>=8.3.4"
 
 # --- user matching the host so mounted caches stay writable -----------------
 ARG USER_UID=1000

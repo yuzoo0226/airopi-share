@@ -46,17 +46,33 @@ except ImportError:  # pragma: no cover - depends on the runtime workspace
     _HAS_GRIPPER_ACTION = False
 
 
-# openpi expects RGB images: the dataset conversion pipeline
-# (deploy/hsr_data_collection/conversion/rosbag2pkl.py) decodes with
-# ``cv2.imdecode(...)[:, :, ::-1]``, i.e. BGR -> RGB.
-_ENCODING_TO_CHANNELS = {
-    "rgb8": 3,
-    "bgr8": 3,
-    "rgba8": 4,
-    "bgra8": 4,
-    "mono8": 1,
-    "8UC1": 1,
-    "8UC3": 3,
+# Image channel order (see docs/ros2_deploy.md 6.1).
+#
+# The source order depends on where the frame comes from:
+#   * CompressedImage  -> cv2.imdecode returns BGR
+#   * Image "rgb8"     -> RGB   (what Ignition Gazebo publishes)
+#   * Image "bgr8"     -> BGR
+# so the node normalises everything to a single order before handing the frame
+# to the policy, selected by the `policy_image_order` parameter. Without this,
+# the simulator would feed RGB while the real robot feeds BGR.
+#
+# The default is "bgr": the ROS 1 deployment node and the ROS 2 client of the
+# ICRA evaluation runtime both pass the raw cv2.imdecode output, so that is the
+# order the released checkpoints were deployed with — even though the dataset
+# conversion pipeline ends up storing RGB.
+IMAGE_ORDER_RGB = "rgb"
+IMAGE_ORDER_BGR = "bgr"
+IMAGE_ORDERS = [IMAGE_ORDER_BGR, IMAGE_ORDER_RGB]
+
+# encoding -> (channel count, channel order of the decoded buffer)
+_ENCODING_INFO = {
+    "rgb8": (3, IMAGE_ORDER_RGB),
+    "bgr8": (3, IMAGE_ORDER_BGR),
+    "rgba8": (4, IMAGE_ORDER_RGB),
+    "bgra8": (4, IMAGE_ORDER_BGR),
+    "mono8": (1, None),
+    "8UC1": (1, None),
+    "8UC3": (3, IMAGE_ORDER_BGR),
 }
 
 
@@ -125,7 +141,13 @@ class HSREnv:
         self.gripper_grasp_action: str = p("gripper_grasp_action").value
         self.gripper_mode: str = p("gripper_mode").value
         self.gripper_effort: float = float(p("gripper_effort").value)
-        self.bgr_to_rgb: bool = bool(p("bgr_to_rgb").value)
+        self.policy_image_order: str = str(p("policy_image_order").value).lower()
+        if self.policy_image_order not in IMAGE_ORDERS:
+            self._logger.warn(
+                f"Unknown policy_image_order '{self.policy_image_order}'. Falling back to "
+                f"'{IMAGE_ORDER_BGR}'. Available: {', '.join(IMAGE_ORDERS)}"
+            )
+            self.policy_image_order = IMAGE_ORDER_BGR
         self.require_control_mode: bool = bool(p("require_control_mode").value)
         self.control_mode_active_value: str = p("control_mode_active_value").value
         self.instruction: str = p("instruction").value
@@ -179,7 +201,8 @@ class HSREnv:
             f"  head cmd   : {self.head_command_topic}\n"
             f"  gripper cmd: {self.gripper_command_topic}\n"
             f"  base cmd   : {self.base_command_topic}\n"
-            f"  grasp act  : {self.gripper_grasp_action if self.gripper_grasp_client else '<disabled>'}"
+            f"  grasp act  : {self.gripper_grasp_action if self.gripper_grasp_client else '<disabled>'}\n"
+            f"  image order: {self.policy_image_order} (order handed to the policy)"
         )
 
     # ------------------------------------------------------------------ #
@@ -191,29 +214,32 @@ class HSREnv:
         msg_type = CompressedImage if use_compressed else Image
         self._node.create_subscription(msg_type, topic, callback, sensor_qos())
 
+    def _to_policy_order(self, image: np.ndarray, source_order: Optional[str]) -> np.ndarray:
+        """Convert a decoded frame to the channel order the policy expects."""
+        if source_order is None or source_order == self.policy_image_order:
+            return image
+        return image[:, :, ::-1]
+
     def _decode_compressed(self, msg: CompressedImage) -> np.ndarray:
         import cv2  # noqa: PLC0415
 
         np_arr = np.frombuffer(msg.data, np.uint8)
-        image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)  # -> BGR
+        image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)  # always BGR
         if image is None:
             raise ValueError("cv2.imdecode returned None")
-        return image[:, :, ::-1] if self.bgr_to_rgb else image
+        return self._to_policy_order(image, IMAGE_ORDER_BGR)
 
     def _decode_raw(self, msg: Image) -> np.ndarray:
-        encoding = msg.encoding
-        channels = _ENCODING_TO_CHANNELS.get(encoding)
-        if channels is None:
-            raise ValueError(f"Unsupported image encoding '{encoding}'")
+        info = _ENCODING_INFO.get(msg.encoding)
+        if info is None:
+            raise ValueError(f"Unsupported image encoding '{msg.encoding}'")
+        channels, source_order = info
         buf = np.frombuffer(msg.data, dtype=np.uint8)
         image = buf.reshape(msg.height, msg.width, channels)
         if channels == 1:
-            image = np.repeat(image, 3, axis=2)
-        elif channels == 4:
-            image = image[:, :, :3]
-        if encoding.startswith("bgr") and self.bgr_to_rgb:
-            image = image[:, :, ::-1]
-        return image
+            return np.repeat(image, 3, axis=2)
+        image = image[:, :, :3]
+        return self._to_policy_order(image, source_order)
 
     def _decode_image(self, msg) -> np.ndarray:
         if isinstance(msg, CompressedImage):

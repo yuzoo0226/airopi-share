@@ -133,7 +133,7 @@ not on `~/command`.
 | `upsample` / `upsample_hz` / `upsample_method` | `true` / `100` / `spline` | Interpolation to the execution rate |
 | `action_smoothing` / `ema_alpha` / `ma_window` | `ema` / `0.2` / `5` | Smoothing |
 | `gripper_mode` | `hybrid` | `continuous` / `discrete` / `hybrid` |
-| `bgr_to_rgb` | `true` | Convert decoded images to RGB (see §6.1) |
+| `policy_image_order` | `bgr` | Channel order handed to the policy (see §6.1) |
 | `require_control_mode` / `auto_start` | `true` / `false` | Wait for `/control_mode == auto` |
 | `save_exec_trace` | `false` | Save the execution trace (npz + png) |
 
@@ -141,25 +141,43 @@ not on `~/command`.
 
 ## 6. Implementation notes
 
-### 6.1 Image channel order differs from the ROS 1 node
+### 6.1 Image channel order (careful)
 
-The dataset conversion
-(`deploy/hsr_data_collection/conversion/rosbag2pkl.py`) decodes with
+Training and deployment disagree on the channel order.
+
+**Training produces RGB.** Following the three conversion steps in
+`deploy/hsr_data_collection/conversion/`:
 
 ```python
-img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)[:, :, ::-1]   # BGR -> RGB
+# rosbag2pkl.py : received JPEG -> RGB array
+img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)[:, :, ::-1]
+# rosbag2pkl.py : flipped back to BGR before writing => visually correct JPEG
+cv2.imwrite(path, image[:, :, ::-1])
+# pkl2np.py / pkl2rlds.py : read back and flip to RGB
+image = cv2.imread(impath)[:, :, ::-1]
 ```
 
-while the ROS 1 inference node
-(`deploy/hsr_openpi_deploy/scripts/hsr_openpi.py`) uses
+**Deployment feeds BGR.** The ROS 1 node
+(`deploy/hsr_openpi_deploy/scripts/hsr_openpi.py`) passes the raw
+`cv2.imdecode` output:
 
 ```python
 image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)[:, :, :]    # stays BGR
 ```
 
-so training and ROS 1 deployment disagree on the channel order. The ROS 2 node
-defaults to **RGB**, matching training. Pass `bgr_to_rgb:=false` to reproduce the
-ROS 1 behaviour.
+and the ROS 2 client of the ICRA evaluation runtime
+(`tamukohlaboratory/airoa-evaluation-ICRA`) likewise converts `rgb8` frames to
+BGR before inference.
+
+The source order also depends on the transport: `cv2.imdecode` of a
+`CompressedImage` yields BGR, while Ignition Gazebo publishes raw `rgb8`. The
+node therefore normalises every frame to `policy_image_order` (default `bgr`)
+instead of just flipping conditionally — otherwise the simulator would feed RGB
+while the real robot feeds BGR.
+
+`bgr` is the default because that is what the two deployments validated against
+the released checkpoints do. Set `policy_image_order:=rgb` to match the training
+pipeline instead; which one performs better is worth an A/B run.
 
 ### 6.2 JAX version
 

@@ -73,7 +73,7 @@ _PARAMETERS = (
     ("gripper_mode", "hybrid"),
     ("gripper_effort", -0.018),
     ("image_transport", "auto"),
-    ("bgr_to_rgb", True),
+    ("policy_image_order", "bgr"),
     ("require_control_mode", True),
     ("control_mode_active_value", "auto"),
     ("auto_start", False),

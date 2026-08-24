@@ -171,7 +171,7 @@ ROS 2 の `joint_trajectory_controller` はトピック名が `~/command` では
 | `upsample` / `upsample_hz` / `upsample_method` | `true` / `100` / `spline` | 実行レートへの補間 |
 | `action_smoothing` / `ema_alpha` / `ma_window` | `ema` / `0.2` / `5` | 平滑化 |
 | `gripper_mode` | `hybrid` | `continuous` / `discrete` / `hybrid` |
-| `bgr_to_rgb` | `true` | デコード画像を RGB に変換（後述） |
+| `policy_image_order` | `bgr` | ポリシーに渡す画像のチャネル順（後述） |
 | `require_control_mode` / `auto_start` | `true` / `false` | `/control_mode == auto` を待つか |
 | `save_exec_trace` | `false` | 実行トレース（npz + png）の保存 |
 
@@ -179,24 +179,44 @@ ROS 2 の `joint_trajectory_controller` はトピック名が `~/command` では
 
 ## 6. 実装メモ
 
-### 6.1 画像のチャネル順（ROS 1 版との差分）
+### 6.1 画像のチャネル順（要注意）
 
-学習データ変換 `deploy/hsr_data_collection/conversion/rosbag2pkl.py` は
+学習側とデプロイ側でチャネル順が食い違っています。
+
+**学習側（RGB）** — `deploy/hsr_data_collection/conversion/` の 3 段階を追うと
 
 ```python
-img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)[:, :, ::-1]   # BGR -> RGB
+# rosbag2pkl.py  : 受信 JPEG -> RGB 配列
+img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)[:, :, ::-1]
+# rosbag2pkl.py  : RGB 配列を BGR に戻して保存 => 見た目が正しい JPEG
+cv2.imwrite(path, image[:, :, ::-1])
+# pkl2np.py / pkl2rlds.py : 読み戻して RGB に
+image = cv2.imread(impath)[:, :, ::-1]
 ```
 
-と **RGB** に変換していますが、ROS 1 の推論ノード
+となり、データセットには **RGB** が入ります。
+
+**デプロイ側（BGR）** — ROS 1 の推論ノード
 `deploy/hsr_openpi_deploy/scripts/hsr_openpi.py` は
 
 ```python
 image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)[:, :, :]    # BGR のまま
 ```
 
-で **BGR のまま**ポリシーに渡しています。学習時と推論時でチャネル順が
-食い違っているため、ROS 2 版は既定で学習時と同じ **RGB** に揃えました。
-ROS 1 版と同じ挙動を再現したい場合は `bgr_to_rgb:=false` を指定してください。
+で **BGR のまま**渡しており、ICRA 評価ランタイム
+(`tamukohlaboratory/airoa-evaluation-ICRA`) の ROS 2 クライアントも
+`rgb8` を `COLOR_RGB2BGR` で BGR に揃えてから渡しています。
+
+さらに、転送方式によって元のチャネル順も変わります。`CompressedImage` を
+`cv2.imdecode` すると **BGR**、Ignition Gazebo が publish する raw 画像は
+**`rgb8`** です。そのため本ノードは「条件付きで反転」ではなく、
+**`policy_image_order`（既定 `bgr`）へ正規化**します。そうしないと
+シミュレータでは RGB、実機では BGR がポリシーに入ってしまいます。
+
+既定を `bgr` にしているのは、公開チェックポイントで実績のある 2 つの
+デプロイ実装に合わせる方が安全と判断したためです。学習パイプライン側（RGB）に
+合わせたい場合は `policy_image_order:=rgb` にしてください。どちらが良いかは
+実機・シミュレータでの A/B で確認することを推奨します。
 
 ### 6.2 JAX のバージョン
 
