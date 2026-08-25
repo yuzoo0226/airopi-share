@@ -47,6 +47,7 @@ from __future__ import annotations
 
 import argparse
 import gc
+import math
 import bisect
 import dataclasses
 import json
@@ -59,6 +60,27 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 import numpy as np
 
 logger = logging.getLogger("rosbag2_to_lerobot")
+
+# Physical range of each state joint, from the HSR URDF, widened by 0.2 rad so a
+# little overshoot is not mistaken for corruption. The simulator sometimes emits
+# joint values that are not physically possible -- hand_motor at -11.458 rad
+# against a limit of -0.798 -- from the same numerical blow-up that ends a
+# collection run by sending the base to infinity. Those frames reach the dataset
+# looking like any other, and a state 13 sigma outside the distribution drives a
+# pretrained transformer to enormous outputs: the first training run on data
+# containing them opened at loss 5.2e8, where a clean run opens at 0.18. Nothing
+# else in the pipeline notices, and openpi prints the loss once, at step 0.
+STATE_LIMITS = {
+    "arm_lift_joint": (0.0, 0.69),
+    "arm_flex_joint": (-2.62, 0.0),
+    "arm_roll_joint": (-2.09, 3.84),
+    "wrist_flex_joint": (-1.92, 1.22),
+    "wrist_roll_joint": (-1.92, 3.67),
+    "hand_motor_joint": (-0.798, 1.24),
+    "head_pan_joint": (-3.84, 1.75),
+    "head_tilt_joint": (-1.57, 0.52),
+}
+STATE_LIMIT_MARGIN = 0.2
 
 STATE_NAMES = [
     "arm_lift_joint",
@@ -397,6 +419,24 @@ def build_frames(
 # --------------------------------------------------------------------------- #
 # LeRobot writing
 # --------------------------------------------------------------------------- #
+def out_of_range(frames: List[Dict[str, Any]]) -> Optional[str]:
+    """The first joint whose recorded value is outside what the robot can do.
+
+    Returns a description of the violation, or None when every frame is
+    physically possible. See STATE_LIMITS for why this is worth checking.
+    """
+    states = np.stack([f["observation.state"] for f in frames])
+    for i, name in enumerate(STATE_NAMES):
+        lo, hi = STATE_LIMITS.get(name, (-math.inf, math.inf))
+        lo, hi = lo - STATE_LIMIT_MARGIN, hi + STATE_LIMIT_MARGIN
+        column = states[:, i]
+        bad = (column < lo) | (column > hi)
+        if bad.any():
+            extreme = column[bad][np.argmax(np.abs(column[bad]))]
+            return f"{name}={extreme:.3f} outside [{lo:.2f}, {hi:.2f}] in {int(bad.sum())}/{len(frames)} frames"
+    return None
+
+
 def create_dataset(
     sample_frame: Dict[str, Any],
     *,
@@ -511,6 +551,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     out: Optional[pathlib.Path] = None
     written = 0
     total = 0
+    dropped_out_of_range = 0
     for bag_index, bag in enumerate(args.bag):
         if not bag.exists():
             logger.error("bag not found: %s", bag)
@@ -538,6 +579,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             )
             if len(frames) < args.min_frames:
                 logger.warning("episode %d has only %d frames; skipping", episode.index, len(frames))
+                continue
+            violation = out_of_range(frames)
+            if violation is not None:
+                logger.warning("episode %d: %s; skipping", episode.index, violation)
+                dropped_out_of_range += 1
                 continue
             if dataset is None:
                 dataset, out = create_dataset(
@@ -571,6 +617,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "done: %d episodes / %d frames from %d bag(s) -> %s",
         written, total, len(args.bag), out,
     )
+    if dropped_out_of_range:
+        logger.warning(
+            "dropped %d episode(s) whose joint values are not physically possible", dropped_out_of_range
+        )
     logger.info("next: compute norm stats, then train with dataset.repo_id=%s", args.repo_id)
     return 0
 
