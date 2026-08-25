@@ -47,12 +47,32 @@
 # =============================================================================
 set -uo pipefail
 
+# Run from a copy of this file, not from this file.
+#
+# bash reads a script incrementally, by byte offset, and re-reads from disk as it
+# goes. Editing it while it runs shifts everything past the read position, and
+# the interpreter resumes mid-token: "command not found", "ambiguous redirect",
+# "unexpected EOF while looking for matching quote". A collection run died this
+# way after an edit that only touched the comment block at the top, taking 68
+# episodes of a chunk with it -- and the failure looks like a bug in the script
+# rather than like what it is.
+if [ -z "${COLLECT_CHUNKS_SELF_COPY:-}" ]; then
+    _copy="$(mktemp -t collect_pick_chunks.XXXXXX.sh)"
+    cat "${BASH_SOURCE[0]}" > "${_copy}"
+    chmod +x "${_copy}"
+    export COLLECT_CHUNKS_SELF_COPY="${_copy}"
+    export COLLECT_CHUNKS_ORIGIN="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    exec "${_copy}" "$@"
+fi
+trap 'rm -f "${COLLECT_CHUNKS_SELF_COPY}"' EXIT
+
 NAME="${1:?usage: collect_pick_chunks.sh <name> <chunks> <episodes_per_chunk> [first_seed]}"
 CHUNKS="${2:?}"
 EPISODES="${3:?}"
 FIRST_SEED="${4:-100}"
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# BASH_SOURCE points at the temporary copy, so the origin is passed in instead.
+HERE="${COLLECT_CHUNKS_ORIGIN}"
 REPO_ROOT="$(cd "${HERE}/../.." && pwd)"
 COMPOSE_DIR="${REPO_ROOT}/docker/ros2"
 
