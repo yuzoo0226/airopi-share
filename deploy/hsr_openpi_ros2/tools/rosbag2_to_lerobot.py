@@ -46,6 +46,7 @@ simulation time.
 from __future__ import annotations
 
 import argparse
+import gc
 import bisect
 import dataclasses
 import json
@@ -396,15 +397,23 @@ def build_frames(
 # --------------------------------------------------------------------------- #
 # LeRobot writing
 # --------------------------------------------------------------------------- #
-def write_lerobot(
-    episodes_frames: List[Tuple[Episode, List[Dict[str, Any]]]],
+def create_dataset(
+    sample_frame: Dict[str, Any],
     *,
     repo_id: str,
     root: pathlib.Path,
-    fps: float,
     overwrite: bool,
+    fps: float,
     robot_type: str,
-) -> pathlib.Path:
+):
+    """Open the output dataset, taking the image shapes from one decoded frame.
+
+    Episodes are written as they are read rather than collected first. Holding
+    them all was what made an eight-bag conversion take 88 GB of a machine with
+    122 GB shared between the GPU, the simulator and everything else -- it ran
+    the box down to 328 MB free with the swap exhausted, and killed the training
+    job next to it.
+    """
     from lerobot.common.datasets.lerobot_dataset import LeRobotDataset  # noqa: PLC0415
 
     out = root / repo_id
@@ -413,8 +422,8 @@ def write_lerobot(
             raise FileExistsError(f"{out} already exists (pass --overwrite)")
         shutil.rmtree(out)
 
-    head_shape = episodes_frames[0][1][0]["observation.image.head"].shape
-    hand_shape = episodes_frames[0][1][0]["observation.image.hand"].shape
+    head_shape = sample_frame["observation.image.head"].shape
+    hand_shape = sample_frame["observation.image.hand"].shape
 
     features = {
         "observation.image.head": {
@@ -441,16 +450,7 @@ def write_lerobot(
         image_writer_threads=8,
         image_writer_processes=2,
     )
-
-    for episode, frames in episodes_frames:
-        for frame in frames:
-            dataset.add_frame(dict(frame))
-        dataset.save_episode()
-        logger.info("wrote episode %d (%d frames, task=%r)", episode.index, len(frames), episode.task)
-
-    if hasattr(dataset, "consolidate"):
-        dataset.consolidate()
-    return out
+    return dataset, out
 
 
 # --------------------------------------------------------------------------- #
@@ -507,7 +507,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         logger.error("--results-json must be given once per --bag (or not at all)")
         return 1
 
-    episodes_frames: List[Tuple[Episode, List[Dict[str, Any]]]] = []
+    dataset = None
+    out: Optional[pathlib.Path] = None
+    written = 0
+    total = 0
     for bag_index, bag in enumerate(args.bag):
         if not bag.exists():
             logger.error("bag not found: %s", bag)
@@ -528,39 +531,45 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             )
 
         for episode in episodes:
+            if args.max_episodes and written >= args.max_episodes:
+                break
             frames = build_frames(
                 series, episode, fps=args.fps, image_order=args.image_order, max_age_s=args.max_age
             )
             if len(frames) < args.min_frames:
                 logger.warning("episode %d has only %d frames; skipping", episode.index, len(frames))
                 continue
-            # Episode indices restart in every bag, so renumber to keep them
+            if dataset is None:
+                dataset, out = create_dataset(
+                    frames[0],
+                    repo_id=args.repo_id,
+                    root=args.root,
+                    overwrite=args.overwrite,
+                    fps=args.fps,
+                    robot_type=args.robot_type,
+                )
+            for frame in frames:
+                dataset.add_frame(dict(frame))
+            dataset.save_episode()
+            # Episode indices restart in every bag; the running count keeps them
             # unique across the merged dataset.
-            episodes_frames.append(
-                (dataclasses.replace(episode, index=len(episodes_frames)), frames)
-            )
-        if args.max_episodes and len(episodes_frames) >= args.max_episodes:
+            logger.info("wrote episode %d (%d frames, task=%r)", written, len(frames), episode.task)
+            written += 1
+            total += len(frames)
+            del frames
+        del series, episodes
+        gc.collect()
+        if args.max_episodes and written >= args.max_episodes:
             break
 
-    if args.max_episodes:
-        episodes_frames = episodes_frames[: args.max_episodes]
-
-    if not episodes_frames:
+    if dataset is None:
         logger.error("no usable episodes")
         return 1
-
-    out = write_lerobot(
-        episodes_frames,
-        repo_id=args.repo_id,
-        root=args.root,
-        fps=args.fps,
-        overwrite=args.overwrite,
-        robot_type=args.robot_type,
-    )
-    total = sum(len(f) for _, f in episodes_frames)
+    if hasattr(dataset, "consolidate"):
+        dataset.consolidate()
     logger.info(
         "done: %d episodes / %d frames from %d bag(s) -> %s",
-        len(episodes_frames), total, len(args.bag), out,
+        written, total, len(args.bag), out,
     )
     logger.info("next: compute norm stats, then train with dataset.repo_id=%s", args.repo_id)
     return 0
