@@ -25,6 +25,18 @@ services:
         USER_GID: ${HOST_GID:-1000}
     network_mode: host
     ipc: host
+    # Without an init process, PID 1 is the interactive shell and never reaps its
+    # grandchildren. A long session that restarts the simulator many times then
+    # accumulates zombies -- 230 of them here -- until the process table is full
+    # enough that new threads fail to start. The visible symptom is not an error
+    # but a hang: gz_ros2_control logs "Loading controller_manager" and stops
+    # there, every spawner times out, and the simulator looks like it silently
+    # refuses to come up. tini reaps them.
+    init: true
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     privileged: true
     runtime: ${DOCKER_RUNTIME:-nvidia}
     stdin_open: true

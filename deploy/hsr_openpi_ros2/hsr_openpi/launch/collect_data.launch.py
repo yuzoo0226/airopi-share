@@ -78,6 +78,8 @@ _ARGS = (
     # pick driver
     ("close_time", "2.2", "Seconds spent closing the gripper (includes the grasp fix respawn)."),
     ("approach_timeout", "8.0", "Seconds the base gets to reach the grasp pose before giving up."),
+    ("head_track", "hand", "\"hand\" keeps the gripper centred in the head camera; \"fixed\" holds head_tilt."),
+    ("head_tilt", "-0.45", "Head tilt held when head_track is \"fixed\", and the pose every episode starts from."),
     ("objects", "", "Comma separated subset of the object library (empty = all ten)."),
     ("results_path", "", "Where the per-episode success log is written."),
     # random driver
@@ -137,6 +139,8 @@ def _launch_setup(context, *args, **kwargs):
             "world": cfg("world"),
             "close_time": cfg("close_time"),
             "approach_timeout": cfg("approach_timeout"),
+            "head_track": cfg("head_track"),
+            "head_tilt": cfg("head_tilt"),
             "results_path": cfg("results_path"),
             "object_pose_topic": GZ_POSE_TOPIC,
         }

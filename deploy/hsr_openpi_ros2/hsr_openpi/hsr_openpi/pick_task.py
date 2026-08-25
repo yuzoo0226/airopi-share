@@ -46,6 +46,8 @@ from sensor_msgs.msg import JointState
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
 from tf2_msgs.msg import TFMessage
+from tf2_ros import Buffer, TransformListener
+from tf2_ros import TransformException
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
 from hsr_openpi.gz_world import (
@@ -143,6 +145,19 @@ class PickTask(Node):
         p("start_yaw_jitter", 0.22)
         # motion
         p("head_tilt", -0.45)
+        # Head behaviour. "hand" reproduces the looking_hand_constraint that the
+        # HSR planner applies during manipulation (hsrb_planner_plugins/look_hand):
+        # keep the gripper in the centre of the head camera. Doing it here rather
+        # than as a planner constraint, because this node commands the joints
+        # directly instead of planning trajectories.
+        p("head_track", "hand")
+        p("head_gaze_frame", "hand_palm_link")
+        p("head_camera_frame", "head_rgbd_sensor_rgb_frame")
+        p("head_gaze_gain", 0.7)
+        p("head_max_rate", 1.2)
+        p("head_deadband", 0.010)
+        p("head_pan_limits", [-3.83, 1.75])
+        p("head_tilt_limits", [-1.57, 0.52])
         p("approach_timeout", 8.0)
         p("position_tolerance", 0.012)
         p("yaw_tolerance", 0.030)
@@ -208,6 +223,19 @@ class PickTask(Node):
         self.num_episodes = int(g("num_episodes"))
         self.rng = np.random.default_rng(int(g("seed")))
         self.head_tilt = float(g("head_tilt"))
+        self.head_track = str(g("head_track"))
+        self.head_gaze_frame = str(g("head_gaze_frame"))
+        self.head_camera_frame = str(g("head_camera_frame"))
+        self.head_gaze_gain = float(g("head_gaze_gain"))
+        self.head_max_rate = float(g("head_max_rate"))
+        self.head_deadband = float(g("head_deadband"))
+        self.head_pan_limits = tuple(float(v) for v in g("head_pan_limits"))
+        self.head_tilt_limits = tuple(float(v) for v in g("head_tilt_limits"))
+        # Commanded head angles. Tracking integrates onto this rather than onto
+        # the measured angles, so a lagging controller does not feed its own lag
+        # back into the next command.
+        self.head_cmd = [0.0, self.head_tilt]
+        self.head_gaze_error: Optional[Tuple[float, float]] = None
 
         self.table_near_edge_x = float(g("table_near_edge_x"))
         self.table_depth = float(g("table_depth"))
@@ -237,6 +265,8 @@ class PickTask(Node):
         self.create_subscription(JointState, g("joint_states_topic"), self._joint_cb, sensor_qos(10))
         self.create_subscription(Odometry, g("odom_topic"), self._odom_cb, sensor_qos(10))
         self.create_subscription(TFMessage, g("object_pose_topic"), self._object_cb, sensor_qos(10))
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self, spin_thread=True)
 
         self.grasp_client = (
             ActionClient(self, GripperApplyEffort, "/gripper_controller/grasp")
@@ -340,8 +370,108 @@ class PickTask(Node):
             self._trajectory(ARM_JOINTS, [arm_lift, ARM_FLEX, 0.0, WRIST_FLEX, 0.0], duration_s)
         )
 
+    @staticmethod
+    def _apply_transform(tf, point: np.ndarray) -> np.ndarray:
+        """Rotate and translate a point by a geometry_msgs Transform."""
+        q = tf.transform.rotation
+        u = np.array([q.x, q.y, q.z], dtype=float)
+        rotated = (
+            2.0 * float(u @ point) * u
+            + (q.w * q.w - float(u @ u)) * point
+            + 2.0 * q.w * np.cross(u, point)
+        )
+        t = tf.transform.translation
+        return rotated + np.array([t.x, t.y, t.z], dtype=float)
+
+    def _hand_in_camera(self) -> Optional[np.ndarray]:
+        try:
+            tf = self.tf_buffer.lookup_transform(
+                self.head_camera_frame, self.head_gaze_frame, rclpy.time.Time()
+            )
+        except TransformException:
+            return None
+        t = tf.transform.translation
+        return np.array([t.x, t.y, t.z], dtype=float)
+
+    def _object_in_camera(self) -> Optional[np.ndarray]:
+        """The target object, expressed in the camera's optical frame.
+
+        `_palm_world` already treats odom as world coordinates -- the robot is
+        spawned at the origin and moved with set_pose -- so the object's world
+        pose from /gz/dynamic_pose converts into the base frame with the odom
+        pose alone, and TF carries it the rest of the way to the camera.
+        """
+        with self._lock:
+            pose = self.object_pose
+            odom = self.odom
+        if pose is None or odom is None:
+            return None
+        x, y, yaw = odom
+        dx, dy = pose[0] - x, pose[1] - y
+        c, s_ = math.cos(yaw), math.sin(yaw)
+        in_base = np.array([dx * c + dy * s_, -dx * s_ + dy * c, pose[2]], dtype=float)
+        try:
+            tf = self.tf_buffer.lookup_transform(
+                self.head_camera_frame, "base_footprint", rclpy.time.Time()
+            )
+        except TransformException:
+            return None
+        return self._apply_transform(tf, in_base)
+
+    def _gaze_error(self) -> Optional[Tuple[float, float]]:
+        """Angle from the camera's optical axis to the gaze target, in radians.
+
+        Everything is resolved in the camera's optical frame, so the result
+        already accounts for the camera sitting off the tilt axis and for the
+        torso rising with arm_lift -- the two corrections that make a
+        hand-written pan/tilt formula wrong on this robot.
+
+        Returns (yaw, pitch), both positive when the target is to the right of
+        and below the optical axis (REP 103 optical convention: +x right, +y
+        down, +z forward).
+        """
+        if self.head_track == "hand":
+            target = self._hand_in_camera()
+        elif self.head_track == "object":
+            target = self._object_in_camera()
+        elif self.head_track == "midpoint":
+            hand, obj = self._hand_in_camera(), self._object_in_camera()
+            target = None if hand is None or obj is None else 0.5 * (hand + obj)
+        else:
+            return None
+        if target is None or target[2] <= 1e-3:
+            # missing, or behind the camera, where "turn towards it" is meaningless
+            return None
+        return math.atan2(target[0], target[2]), math.atan2(target[1], target[2])
+
+    def _update_head_command(self) -> None:
+        """Servo the head so the gripper stays centred in the head camera."""
+        if self.head_track not in ("hand", "object", "midpoint"):
+            self.head_cmd = [0.0, self.head_tilt]
+            return
+
+        error = self._gaze_error()
+        self.head_gaze_error = error
+        if error is None:
+            return
+
+        # head_pan turns the camera to the left for positive angles and head_tilt
+        # raises it, so a target that is to the right of / below the optical axis
+        # is corrected by subtracting. The step is capped at head_max_rate so the
+        # head sweeps smoothly instead of snapping -- these images are training
+        # data, and a head that jumps between frames teaches the policy nothing.
+        limit = self.head_max_rate * self.dt
+        for i, (err, lo_hi) in enumerate(
+            zip(error, (self.head_pan_limits, self.head_tilt_limits))
+        ):
+            if abs(err) < self.head_deadband:
+                continue
+            step = float(np.clip(-self.head_gaze_gain * err, -limit, limit))
+            self.head_cmd[i] = float(np.clip(self.head_cmd[i] + step, lo_hi[0], lo_hi[1]))
+
     def _send_head(self, duration_s: float) -> None:
-        self.head_pub.publish(self._trajectory(HEAD_JOINTS, [0.0, self.head_tilt], duration_s))
+        self._update_head_command()
+        self.head_pub.publish(self._trajectory(HEAD_JOINTS, list(self.head_cmd), duration_s))
 
     def _send_gripper(self, value: float, duration_s: float = 1.0) -> None:
         """Mirror hsr_openpi_node's hybrid gripper mode.
@@ -419,6 +549,9 @@ class PickTask(Node):
         # Start every episode from the same arm configuration as the
         # demonstrations, whoever drives afterwards.
         self._send_arm(self.grasp_arm_lift + float(g("pre_grasp_height")), 1.2)
+        # Every episode starts from the same head pose, so tracking cannot carry
+        # the previous episode's aim into the next one's first frames.
+        self.head_cmd = [0.0, self.head_tilt]
         self._send_head(1.0)
         self._send_gripper(GRIPPER_OPEN, 1.0)
         self.world.spawn(
