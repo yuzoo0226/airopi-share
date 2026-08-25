@@ -35,7 +35,15 @@ echo "exp=${EXP} config=${CONFIG}"
 cd "${REPO}" || exit 1
 
 export OPENPI_DATA_HOME="${ROOT}/.cache/openpi"
-mkdir -p "${OPENPI_DATA_HOME}"
+export HF_HOME="${ROOT}/.cache/huggingface"
+mkdir -p "${OPENPI_DATA_HOME}" "${HF_HOME}"
+
+# Without this, lerobot resolves the dataset by asking huggingface.co for its
+# revisions and dies with "Repository Not Found" -- the local directory is never
+# consulted. FastLeRobotDatasetMetadata falls back to HF_LEROBOT_HOME/<repo_id>,
+# so this is what makes the copy on disk the one that gets used. The GB10
+# containers set it in the image, which is why it was easy to miss here.
+export HF_LEROBOT_HOME="${ROOT}/datasets"
 
 # The YAML holds the paths the GB10 containers mount (/home/datasets,
 # /home/checkpoints). Rather than keep a second copy of the config in step with
