@@ -82,8 +82,12 @@ while true; do
     # While it runs, surface progress so a silent stall is visible too: a job
     # that is RUNNING but has not written a step in a long while is as broken as
     # one that exited.
+    # tqdm switches from "996it" to "1.61kit" past a thousand, so a pattern that
+    # only matches the first form stops updating and every later poll looks like
+    # no progress -- the watcher would call a healthy job stalled from step 1000
+    # onwards.
     if [ "${state}" = "RUNNING" ] && [ -n "${OUT}" ]; then
-        step=$(remote "grep -aoE 'Progress on: [0-9.]+it/[0-9.]+kit rate:[0-9.]+s/it' '${OUT}' 2>/dev/null | tail -1")
+        step=$(remote "grep -aoE 'Progress on: [0-9.]+k?it/[0-9.]+kit rate:[0-9.]+s/it' '${OUT}' 2>/dev/null | tail -1")
         if [ -n "${step}" ] && [ "${step}" != "${last_step}" ]; then
             echo "job ${JOB} ${step}"
             last_step="${step}"
