@@ -365,3 +365,52 @@ per_image` を明示しています。**推論側は影響を受けません**
    カメラトピック名は HSR の個体差があります（`/head_rgbd_sensor/rgb/image_rect_color/compressed`,
    `/head_rgbd_sensor/rgb/image_raw/compressed`, `/head_rgbd_sensor/color/image_raw/compressed` など）。
    `config/real_topics.yaml` を実機に合わせて調整してください。
+
+---
+
+## 6. Gazebo が exit 134 で落ちる件（2026-08-25 追記）
+
+長時間の収集中に Ignition が `exit code 134`（SIGABRT）で落ちる。1 チャンク
+100 エピソードのうち 34〜94 本で発生し、再現条件は特定できていないが、
+**原因は ODE ではなく台車コントローラ**であることまで判明した。
+
+abort の直前に出ているのはこの 3 行:
+
+```
+[omni_base_controller] Too big joint velocity! [right, left, steer]=[2.37e+48, 0.0, 0.0]
+[controller_manager] The update call of the following controller returned an error: 'omni_base_controller'
+ODE INTERNAL ERROR 1: assertion "aabbBound >= dMinIntExact && aabbBound < dMaxIntExact" failed in collide() [collision_space.cpp:460]
+```
+
+`hsrb_base_controllers::OmniBaseController` が右車輪に 2.37×10^48 という
+値を出し、ロボットが事実上無限遠へ飛ぶ。その結果 AABB が ODE のハッシュ空間の
+整数範囲を超え、`dxHashSpace::collide` のアサーションが `dDebug` → `abort` を
+呼ぶ。つまり **ODE のアサーションは症状であって原因ではない**。
+`<collision_detector>bullet` に替えても直らない（そちらは DART の
+`BoxedLcpConstraintSolver.cpp:229` で即死する）のはこのため。
+
+観測できた事実:
+
+* この `Too big joint velocity!` は落ちる直前の **1 回だけ**出る。
+  常時出ている警告が積み重なって落ちるのではない。
+* 発生時刻はエピソード 51 の終了 1.0 秒後で、`RESET` で
+  `world.set_pose("hsrb", ...)` がロボットをテレポートさせる瞬間と一致する。
+  ただし別チャンクではエピソード途中でも落ちているため、テレポートが
+  唯一のトリガーとは言い切れない。
+* OOM ではない（`dmesg` に記録なし、空き 90 GB、Gazebo の RSS は 1 GB 未満）。
+* `motion_command_limitter_controller` は台車の車輪インタフェースを
+  握っているが、この値を止めていない。
+
+### 対処
+
+根治は TMC 側のコントローラの問題なので、**落ちる前提で運用**している。
+`scripts/ros2/collect_pick_chunks.sh` がチャンクごとに Gazebo を立て直し、
+recorder が SIGINT を受け取れずに壊れた bag は `ros2 bag reindex` →
+`ros2 bag convert` で修復する。落ちてもそのチャンクまでのデータは失われない
+（例: chunk 0 は 94 本すべて回収できている）。
+
+### 次に落ちたときに原因を追うには
+
+Gazebo の出力は `/tmp/gz.log` にリダイレクトされ、次チャンクの開始時に
+切り詰められるため、abort 行は放っておくと毎回消える。プロセスの消滅を
+検知してログを退避すること。上記のスタックトレースはそうやって採取した。
