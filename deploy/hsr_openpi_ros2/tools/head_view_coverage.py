@@ -70,6 +70,7 @@ def main(argv=None) -> int:
     ap.add_argument("--hue-tolerance", type=float, default=12.0, help="OpenCV hue distance (0..179)")
     ap.add_argument("--min-saturation", type=int, default=70, help="Below this a pixel is scene, not object")
     ap.add_argument("--min-pixels", type=int, default=30, help="Pixels needed to call the object visible")
+    ap.add_argument("--stride", type=int, default=1, help="Decode every Nth frame; JPEG decoding dominates")
     args = ap.parse_args(argv)
 
     from rosbags.highlevel import AnyReader
@@ -110,7 +111,9 @@ def main(argv=None) -> int:
             visible = 0
             total = 0
             conns = [c for c in reader.connections if c.topic == head_topic]
-            for conn, stamp, raw in reader.messages(connections=conns):
+            for seen, (conn, stamp, raw) in enumerate(reader.messages(connections=conns)):
+                if seen % args.stride:
+                    continue
                 name = object_at(stamp)
                 if name is None or hues.get(name) is None:
                     continue

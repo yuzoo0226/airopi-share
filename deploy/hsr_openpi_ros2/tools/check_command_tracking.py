@@ -33,13 +33,21 @@ HEAD_TOPIC = "/head_trajectory_controller/joint_trajectory"
 JOINT_TOPIC = "/joint_states"
 
 
-def _sample(series: List[Tuple[int, float]], stamp: int) -> Optional[float]:
-    """Value of a (stamp, value) series at or just after `stamp`."""
-    stamps = [s for s, _ in series]
-    i = int(np.searchsorted(stamps, stamp))
-    if i >= len(series):
-        return None
-    return series[i][1]
+class Series:
+    """A joint's recorded positions, searchable by time.
+
+    The stamps are extracted once: rebuilding them per lookup turns this into
+    an O(commands x states) scan, which on a 90-episode bag never finishes.
+    """
+
+    def __init__(self, samples: List[Tuple[int, float]]) -> None:
+        self.stamps = np.fromiter((s for s, _ in samples), dtype=np.int64, count=len(samples))
+        self.values = np.fromiter((v for _, v in samples), dtype=float, count=len(samples))
+
+    def at(self, stamp: int) -> Optional[float]:
+        """Value at or just after `stamp`, or None past the end of the recording."""
+        i = int(np.searchsorted(self.stamps, stamp))
+        return None if i >= len(self.values) else float(self.values[i])
 
 
 def main(argv=None) -> int:
@@ -61,15 +69,16 @@ def main(argv=None) -> int:
     for bag in args.bag:
         print(f"\n=== {bag.name} ===")
         with AnyReader([bag]) as reader:
-            states: Dict[str, List[Tuple[int, float]]] = {}
+            samples: Dict[str, List[Tuple[int, float]]] = {}
             conns = [c for c in reader.connections if c.topic == JOINT_TOPIC]
             for conn, stamp, raw in reader.messages(connections=conns):
                 msg = reader.deserialize(raw, conn.msgtype)
                 for name, position in zip(msg.name, msg.position):
-                    states.setdefault(name, []).append((stamp, float(position)))
-            if not states:
+                    samples.setdefault(name, []).append((stamp, float(position)))
+            if not samples:
                 print("  no /joint_states in this bag")
                 continue
+            states = {name: Series(values) for name, values in samples.items()}
 
             residuals: Dict[str, List[float]] = {}
             for topic in (ARM_TOPIC, HEAD_TOPIC):
@@ -83,9 +92,9 @@ def main(argv=None) -> int:
                     target = msg.points[-1].positions
                     for name, want in zip(msg.joint_names, target):
                         series = states.get(name)
-                        if not series:
+                        if series is None:
                             continue
-                        got = _sample(series, stamp + horizon_ns)
+                        got = series.at(stamp + horizon_ns)
                         if got is None:
                             continue
                         residuals.setdefault(name, []).append(abs(float(want) - got))
