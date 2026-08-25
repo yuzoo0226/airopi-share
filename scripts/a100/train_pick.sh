@@ -49,12 +49,27 @@ export HF_LEROBOT_HOME="${ROOT}/datasets"
 # /home/checkpoints). Rather than keep a second copy of the config in step with
 # the first, derive one at submit time with just those two lines rewritten --
 # train.py has no CLI override for either.
+#
+# num_workers is overridden too. openpi forces the "spawn" start method whenever
+# num_workers > 0, and on this cluster a spawned worker dies rebuilding the
+# semaphore it was handed:
+#
+#   multiprocessing/synchronize.py __setstate__ -> SemLock._rebuild
+#   FileNotFoundError: [Errno 2] No such file or directory
+#
+# /dev/shm is 252 GB and semaphores work fine outside the job, so this is
+# something about the job's namespace rather than a resource limit. The failure
+# does not stop the run -- openpi catches it and skips the batch -- so the job
+# sits in RUNNING, logs "Skipping bad batch" forever and trains on nothing.
+NUM_WORKERS="${NUM_WORKERS:-0}"
+
 DERIVED="${ROOT}/.config_${EXP}.yaml"
 sed -e "s|^  data_dir: /home/datasets/|  data_dir: ${ROOT}/datasets/|" \
     -e "s|^  params_path: /home/checkpoints/|  params_path: ${ROOT}/checkpoints/|" \
+    -e "s|^  num_workers: .*|  num_workers: ${NUM_WORKERS}|" \
     "${CONFIG}" > "${DERIVED}"
 echo "--- paths in effect ---"
-grep -nE "data_dir|params_path|assets_dir" "${DERIVED}"
+grep -nE "data_dir|params_path|assets_dir|num_workers" "${DERIVED}"
 for f in $(grep -oE "${ROOT}[^ ]*" "${DERIVED}"); do
     [ -e "${f}" ] || { echo "MISSING: ${f}"; exit 1; }
 done
