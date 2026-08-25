@@ -456,7 +456,15 @@ def write_lerobot(
 # --------------------------------------------------------------------------- #
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--bag", required=True, type=pathlib.Path, help="rosbag2 directory (mcap or sqlite3).")
+    p.add_argument(
+        "--bag",
+        required=True,
+        action="append",
+        type=pathlib.Path,
+        help="rosbag2 directory (mcap or sqlite3). Repeat to merge several "
+        "collection runs into one dataset; episodes are renumbered so their "
+        "indices stay unique.",
+    )
     p.add_argument("--repo-id", required=True, help="LeRobot repo id, e.g. lerobot_datasets/hsr_gazebo_random.")
     p.add_argument("--root", type=pathlib.Path, default=pathlib.Path("/home/datasets"), help="Dataset root.")
     p.add_argument("--fps", type=float, default=10.0, help="Resampling rate of the dataset.")
@@ -476,11 +484,12 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     p.add_argument("--topics-json", type=pathlib.Path, default=None, help="JSON overriding the topic names.")
     p.add_argument(
         "--results-json",
+        action="append",
         type=pathlib.Path,
         default=None,
         help="Per-episode result file written by hsr_pick_task. When given, only "
         "episodes it marks successful are converted - failed demonstrations teach "
-        "the policy to fail.",
+        "the policy to fail. Give one per --bag, in the same order.",
     )
     return p.parse_args(argv)
 

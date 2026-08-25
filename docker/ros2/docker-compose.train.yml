@@ -17,3 +17,14 @@ services:
     volumes:
       - ${DEEP_CHECKPOINT_PATH:-../../../checkpoints}:/home/checkpoints
       - ${DEEP_BAG_PATH:-../../../hsr_ros2_ws/_bags}:/home/bags:ro
+    environment:
+      # This machine has unified memory: the "GPU memory" JAX preallocates is the
+      # same pool Gazebo, the ROS 2 graph, rosbag2's image buffers and the
+      # dataloader workers draw from. Preallocating left 5 GB of 119 GB free,
+      # which is not enough to start the simulator -- every controller spawner
+      # timed out against /controller_manager and the collection run sat idle for
+      # nearly two hours without ever recording an episode. Allocating on demand
+      # holds ~25 GB instead of ~90 GB, which leaves room for the simulator that
+      # the evaluation runs need anyway.
+      - XLA_PYTHON_CLIENT_PREALLOCATE=false
+      - XLA_PYTHON_CLIENT_ALLOCATOR=platform
