@@ -380,6 +380,18 @@ def main():
         help="If set, aggregate all features from episodes_stats.jsonl (default: only required state/action keys).",
     )
     ap.add_argument("--write-meta", action="store_true", help="出力JSONに meta(transform設定) を含める")
+    ap.add_argument(
+        "--min-std",
+        type=float,
+        default=0.01,
+        help="Floor for the per-dimension standard deviation. Normalisation divides by "
+        "(std + 1e-6), so a joint the task holds constant -- arm_roll and wrist_roll are "
+        "commanded to a fixed 0.0 here -- turns the controller's own jitter into enormous "
+        "normalised values: measured std 0.0002 gives |z| up to 235, and 235^2 lands in the "
+        "loss as a 5e4 spike. A dataset where those joints never move at all is safe, because "
+        "the numerator is exactly zero too; add enough episodes for a little jitter and it is "
+        "not. Set to 0 to disable.",
+    )
     args = ap.parse_args()
 
     include_features = None
@@ -534,6 +546,20 @@ def main():
         if isinstance(o, (np.ndarray,)):
             return o.tolist()
         raise TypeError(f"Type {type(o)} not serializable")
+
+    if args.min_std > 0:
+        for group in out.get("norm_stats", {}).values():
+            std = np.asarray(group["std"], dtype=np.float64)
+            # Leave exact zeros alone: those dimensions are padding or truly
+            # constant, and openpi already handles them (numerator is zero too).
+            raised = (std > 0) & (std < args.min_std)
+            if raised.any():
+                print(
+                    f"[INFO] raising {int(raised.sum())} std value(s) below {args.min_std} "
+                    f"(min was {std[std > 0].min():.2e})"
+                )
+                std[raised] = args.min_std
+                group["std"] = std.tolist()
 
     Path(args.output_file).parent.mkdir(parents=True, exist_ok=True)
     Path(args.output_file).write_text(json.dumps(out, ensure_ascii=False, indent=2, default=_json_default))
