@@ -4,7 +4,14 @@
 #   ros2 launch hsr_openpi collect_data.launch.py driver:=pick num_episodes:=100
 #   deploy/hsr_openpi_ros2/tools/rosbag2_to_lerobot.py --bag ... --image-order bgr
 #   scripts/aggregate_stats_fast.py --action-column action.relative --action-mode relative
-#   scripts/train.py --config-yaml configs/experiments/example_hsr_pick_gazebo.yaml
+#   scripts/train.py --config-yaml configs/experiments/example_hsr_pick_gazebo.yaml \
+#       --exp-name <run> --checkpoint-base-dir /home/checkpoints/_train
+#
+# --checkpoint-base-dir is not optional here. It defaults to ./checkpoints, which
+# inside the training container is the repository itself -- a directory the
+# policy server does not mount, so the run trains fine and then the evaluation
+# cannot find a single checkpoint. /home/checkpoints is the one path both
+# containers see.
 #
 # Budget in *steps*, not epochs. Measured on this GB10: 5.8 s/step at batch 16,
 # so an epoch of the 26,042-frame dataset (1,628 steps) costs 2.6 hours and the
