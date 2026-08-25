@@ -89,7 +89,19 @@ while true; do
     if [ "${state}" = "RUNNING" ] && [ -n "${OUT}" ]; then
         step=$(remote "grep -aoE 'Progress on: [0-9.]+k?it/[0-9.]+kit rate:[0-9.]+s/it' '${OUT}' 2>/dev/null | tail -1")
         if [ -n "${step}" ] && [ "${step}" != "${last_step}" ]; then
-            echo "job ${JOB} ${step}"
+            # Progress changes on every poll, and a run of this length would
+            # produce a hundred notifications saying nothing. Report the
+            # thousands, which is also where checkpoints and validation land;
+            # keep polling at full rate, since that is what catches a failure.
+            thousand=$(echo "${step}" | grep -oE '[0-9.]+k?it/' | head -1 | tr -d 'it/')
+            case "${thousand}" in
+                *k) thousand="${thousand%k}"; thousand="${thousand%%.*}" ;;
+                *)  thousand=0 ;;
+            esac
+            if [ "${thousand}" != "${last_thousand:-}" ]; then
+                echo "job ${JOB} ${step}"
+                last_thousand="${thousand}"
+            fi
             last_step="${step}"
             stalled=0
         else
