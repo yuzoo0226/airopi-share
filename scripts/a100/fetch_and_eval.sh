@@ -43,7 +43,14 @@ if ! ssh -o BatchMode=yes "${SSH_TARGET}" "test -d ${REMOTE} && test -d ${REMOTE
 fi
 
 echo "[2/3] copying it back (~9 GB)"
-mkdir -p "${LOCAL_ROOT}"
+# The training container writes this tree as root, so the directory can exist
+# and still not be writable by the user running this script.
+if ! mkdir -p "${LOCAL_ROOT}" 2>/dev/null; then
+    echo "[ERROR] cannot create ${LOCAL_ROOT}"
+    echo "        it is probably owned by root from a container run; fix with"
+    echo "        docker exec airopi_ros2_deep_1 chown -R \$(id -u):\$(id -g) /home/checkpoints/_train"
+    exit 1
+fi
 # Trailing slash on neither side: rsync then creates ${LOCAL_ROOT}/${STEP}.
 rsync -a --info=progress2 --partial \
     "${SSH_TARGET}:${REMOTE}" "${LOCAL_ROOT}/" || { echo "[ERROR] copy failed"; exit 1; }
