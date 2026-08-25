@@ -349,6 +349,12 @@ per_image` を明示しています。**推論側は影響を受けません**
 
 ## 5. 別 PC へ移すときのチェックリスト
 
+> **学習を A100 クラスタへ移した記録は
+> [`a100_training_ja.md`](a100_training_ja.md) にある。**
+> x86_64 では下記 (a)(b) と sm_121 まわりの回避策がすべて不要になる代わりに、
+> `av` の ffmpeg 依存、`HF_LEROBOT_HOME`、dataloader の `spawn`、
+> `pbar.write()` のバッファリングという別の4点を踏む。
+
 1. **アーキテクチャ**: x86_64 なら 4.1 (a)(b) の回避策は不要になる可能性が高い
    （`ros-humble-ros-gz-sim` / `gz-ros2-control` の deb が存在するため）。
    その場合でもソースビルドのままで動きます。
