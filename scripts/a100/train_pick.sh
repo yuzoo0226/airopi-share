@@ -22,6 +22,14 @@
 
 set -uo pipefail
 
+# train.py writes the loss with pbar.write(), which bypasses the logging module
+# and lands in Python's own stdout buffer. Slurm redirects stdout to a file, so
+# that buffer is block-buffered and the loss lines sit in it -- the job runs for
+# hours showing tqdm progress (which does go through logging) and not one loss
+# value. Without this the only loss you ever see is the one at step 0, and a
+# diverging run is indistinguishable from a healthy one until the evaluation.
+export PYTHONUNBUFFERED=1
+
 ROOT="${HOME}/usr/airopi"
 REPO="${ROOT}/airopi-share"
 VENV="${ROOT}/venv"

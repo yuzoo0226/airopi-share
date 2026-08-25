@@ -32,6 +32,18 @@ is_terminal() {
     esac
 }
 
+# Ask Slurm where the job writes, rather than guessing. Globbing for
+# slurm-<id>.out under the home directory misses it whenever the job was
+# submitted from a subdirectory -- and a watcher that cannot find the output
+# reports a healthy job as stalled, which is worse than not watching at all.
+OUT=$(ssh -o BatchMode=yes -o ConnectTimeout=15 "${SSH_TARGET}" \
+      "scontrol show job ${JOB} 2>/dev/null | sed -n 's/.*StdOut=//p' | head -1" 2>/dev/null)
+if [ -z "${OUT}" ]; then
+    OUT=$(ssh -o BatchMode=yes -o ConnectTimeout=15 "${SSH_TARGET}" \
+          "find ~ -maxdepth 4 -name 'slurm-${JOB}.out' 2>/dev/null | head -1" 2>/dev/null)
+fi
+[ -n "${OUT}" ] && echo "output: ${OUT}" || echo "WARNING: cannot locate the job output; stall detection is off"
+
 last_state=""
 last_step=""
 missing=0
@@ -56,8 +68,7 @@ while true; do
         else
             echo "job ${JOB} ENDED ABNORMALLY: ${final:-unknown}  ${acct}"
             # The last lines of the job output usually name the cause.
-            out=$(remote "ls -t slurm-${JOB}.out ~/*/slurm-${JOB}.out 2>/dev/null | head -1")
-            [ -n "${out}" ] && remote "tail -15 '${out}'" | sed 's/^/    | /'
+            [ -n "${OUT}" ] && remote "tail -15 '${OUT}'" | sed 's/^/    | /'
         fi
         exit 0
     fi
@@ -71,8 +82,8 @@ while true; do
     # While it runs, surface progress so a silent stall is visible too: a job
     # that is RUNNING but has not written a step in a long while is as broken as
     # one that exited.
-    if [ "${state}" = "RUNNING" ]; then
-        step=$(remote "ls -t slurm-${JOB}.out ~/*/slurm-${JOB}.out 2>/dev/null | head -1 | xargs -r grep -aoE 'Progress on: [0-9.]+it/[0-9.]+kit rate:[0-9.]+s/it' | tail -1")
+    if [ "${state}" = "RUNNING" ] && [ -n "${OUT}" ]; then
+        step=$(remote "grep -aoE 'Progress on: [0-9.]+it/[0-9.]+kit rate:[0-9.]+s/it' '${OUT}' 2>/dev/null | tail -1")
         if [ -n "${step}" ] && [ "${step}" != "${last_step}" ]; then
             echo "job ${JOB} ${step}"
             last_step="${step}"
