@@ -266,7 +266,13 @@ class PickTask(Node):
         self.create_subscription(Odometry, g("odom_topic"), self._odom_cb, sensor_qos(10))
         self.create_subscription(TFMessage, g("object_pose_topic"), self._object_cb, sensor_qos(10))
         self.tf_buffer = Buffer()
-        self.tf_listener = TransformListener(self.tf_buffer, self, spin_thread=True)
+        # spin_thread=True would add *this* node to a second executor of its own
+        # (tf2_ros/transform_listener.py calls executor.add_node(self.node)), so the
+        # node ends up spun by two executors at once and the control loop's rate
+        # stops keeping time -- the base then never converges and every approach
+        # times out. The node already runs a MultiThreadedExecutor, which services
+        # these subscriptions, and lookup_transform(..., Time()) never blocks.
+        self.tf_listener = TransformListener(self.tf_buffer, self, spin_thread=False)
 
         self.grasp_client = (
             ActionClient(self, GripperApplyEffort, "/gripper_controller/grasp")
@@ -357,7 +363,15 @@ class PickTask(Node):
 
     def _trajectory(self, names, values, duration_s: float) -> JointTrajectory:
         traj = JointTrajectory()
-        traj.header.stamp = self.get_clock().now().to_msg()
+        # Leave header.stamp at zero: joint_trajectory_controller reads that as
+        # "start now". Stamping with this node's clock makes the trajectory's
+        # start an absolute sim time, and a Python node's /clock handling lags
+        # behind the controller running inside Gazebo -- once that lag exceeds
+        # the 0.2 s duration used here, every trajectory arrives already expired
+        # and the controller drops the lot ("Received trajectory with non-zero
+        # start time that ends in the past"). The arm then creeps instead of
+        # moving and every pick fails, with the reason buried in the simulator's
+        # log. hsr_env._trajectory has always left it at zero.
         traj.joint_names = list(names)
         point = JointTrajectoryPoint()
         point.positions = [float(v) for v in values]

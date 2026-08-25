@@ -195,7 +195,15 @@ class RandomMotion(Node):
         traj = JointTrajectory()
         # Stamp the header so the bag converter can place the command on the
         # simulation timeline instead of the recorder's wall clock.
-        traj.header.stamp = self.get_clock().now().to_msg()
+        # Leave header.stamp at zero: joint_trajectory_controller reads that as
+        # "start now". Stamping with this node's clock makes the trajectory's
+        # start an absolute sim time, and a Python node's /clock handling lags
+        # behind the controller running inside Gazebo -- once that lag exceeds
+        # the 0.2 s duration used here, every trajectory arrives already expired
+        # and the controller drops the lot ("Received trajectory with non-zero
+        # start time that ends in the past"). The arm then creeps instead of
+        # moving and every pick fails, with the reason buried in the simulator's
+        # log. hsr_env._trajectory has always left it at zero.
         traj.joint_names = list(names)
         point = JointTrajectoryPoint()
         point.positions = [float(v) for v in values]
