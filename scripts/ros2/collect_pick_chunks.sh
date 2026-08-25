@@ -30,11 +30,16 @@
 #  Do not assume this predicts the abort. pick_e_00 decayed to 59.3% and finished
 #  all 100 episodes; pick_e_01 decayed only to 89.3% and aborted at episode 97.
 #
-#  What does reproduce is where it starts: episode 69 in pick_d_00 and pick_e_00,
-#  episode 76 in pick_e_01. So keep chunks short -- 50 episodes stops before the
-#  onset, at the cost of one extra simulator restart, about two minutes, per
-#  chunk. Expect that to protect the yield, not to make the decay or the aborts
-#  go away.
+#  What does reproduce is where it starts. First failed episode, over every chunk
+#  that ran past 80 episodes:
+#
+#      pick_d_00  65     pick_e_00  72     pick_e_02  77
+#      pick_d_03  74     pick_e_01  76
+#
+#  Five for five between 65 and 77, with nothing before it. So keep chunks short
+#  -- 50 episodes stops well before the onset, at the cost of one extra simulator
+#  restart, about two minutes, per chunk. Expect that to protect the yield, not
+#  to make the decay or the aborts go away.
 #
 #  A crash also costs one chunk instead of the whole session, and bags whose
 #  recorder did not get a clean SIGINT are repaired here, since `rosbags`
