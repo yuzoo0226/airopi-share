@@ -4,14 +4,31 @@
 #
 #      scripts/ros2/collect_pick_chunks.sh <name> <chunks> <episodes_per_chunk> [first_seed]
 #
-#  e.g. scripts/ros2/collect_pick_chunks.sh pick_b 3 100 100
-#       -> _bags/pick_b_00 .. pick_b_02, 100 episodes each, seeds 100..102
+#  e.g. scripts/ros2/collect_pick_chunks.sh pick_b 8 50 100
+#       -> _bags/pick_b_00 .. pick_b_07, 50 episodes each, seeds 100..107
 #
-#  Why chunks: Ignition aborts every so often during a long run
-#  (dart::collision::OdeCollisionDetector -> dDebug -> abort, exit 134). A crash
-#  costs one chunk instead of the whole session, and the simulator is restarted
-#  fresh for the next one. Bags whose recorder did not get a clean SIGINT are
-#  repaired here as well, since `rosbags` refuses a file with no end magic.
+#  Why chunks: a simulator session degrades as it runs. Measured over five
+#  100-episode chunks, the scripted pick succeeds on essentially every episode
+#  at first and then falls off a cliff:
+#
+#      chunk        1st qtr  2nd qtr  3rd qtr  4th qtr
+#      pick_d_00     100%     100%     95.7%    69.6%
+#      pick_d_03     100%     100%     100%     66.7%
+#      pick_e_00     100%     100%     88.0%    64.0%
+#
+#  The failures are all the same shape -- the base stops 14 to 25 cm from the
+#  object with the arm and gripper doing exactly the right thing -- and they end
+#  in omni_base_controller emitting a garbage wheel velocity and aborting the
+#  simulator (see docs/ros2_worklog_ja.md section 6). This is not caused by load:
+#  pick_d_00 and pick_d_03 ran with nothing else on the machine, pick_e_00 ran
+#  beside a training job, and all three decay the same way.
+#
+#  So keep chunks short. 50 episodes stays inside the healthy stretch on most
+#  runs and costs one extra simulator restart, about two minutes, per chunk.
+#
+#  A crash also costs one chunk instead of the whole session, and bags whose
+#  recorder did not get a clean SIGINT are repaired here, since `rosbags`
+#  refuses a file with no end magic.
 # =============================================================================
 set -uo pipefail
 

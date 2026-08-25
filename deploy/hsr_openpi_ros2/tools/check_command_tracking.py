@@ -60,6 +60,15 @@ def main(argv=None) -> int:
         default=0.05,
         help="residual above which a command counts as not followed",
     )
+    ap.add_argument(
+        "--windows",
+        type=int,
+        default=1,
+        help="Split the recording into N equal spans and report each. A run that "
+        "starts clean and degrades -- because something else on the machine got "
+        "busy, or state accumulated in the simulator -- looks fine when the whole "
+        "bag is averaged into one number.",
+    )
     args = ap.parse_args(argv)
 
     from rosbags.highlevel import AnyReader
@@ -80,7 +89,7 @@ def main(argv=None) -> int:
                 continue
             states = {name: Series(values) for name, values in samples.items()}
 
-            residuals: Dict[str, List[float]] = {}
+            residuals: Dict[str, List[Tuple[int, float]]] = {}
             for topic in (ARM_TOPIC, HEAD_TOPIC):
                 conns = [c for c in reader.connections if c.topic == topic]
                 if not conns:
@@ -97,22 +106,33 @@ def main(argv=None) -> int:
                         got = series.at(stamp + horizon_ns)
                         if got is None:
                             continue
-                        residuals.setdefault(name, []).append(abs(float(want) - got))
+                        residuals.setdefault(name, []).append((stamp, abs(float(want) - got)))
 
             if not residuals:
                 print("  no command topics in this bag")
                 continue
 
-            print(f"  {'joint':<18s} {'commands':>9s} {'median':>8s} {'p90':>8s} {'not followed':>13s}")
+            everything = [s for values in residuals.values() for s, _ in values]
+            first, last = min(everything), max(everything)
+            edges = np.linspace(first, last + 1, args.windows + 1)
+
             worst = 0.0
-            for name in sorted(residuals):
-                values = np.array(residuals[name])
-                share = 100.0 * float((values > args.tolerance).mean())
-                worst = max(worst, share)
-                print(
-                    f"  {name:<18s} {len(values):9d} {np.median(values):8.4f} "
-                    f"{np.percentile(values, 90):8.4f} {share:12.1f}%"
-                )
+            for w in range(args.windows):
+                lo, hi = edges[w], edges[w + 1]
+                if args.windows > 1:
+                    span = (lo - first) / 1e9, (hi - first) / 1e9
+                    print(f"  -- {span[0]:.0f}s to {span[1]:.0f}s")
+                print(f"  {'joint':<18s} {'commands':>9s} {'median':>8s} {'p90':>8s} {'not followed':>13s}")
+                for name in sorted(residuals):
+                    values = np.array([v for s, v in residuals[name] if lo <= s < hi])
+                    if not len(values):
+                        continue
+                    share = 100.0 * float((values > args.tolerance).mean())
+                    worst = max(worst, share)
+                    print(
+                        f"  {name:<18s} {len(values):9d} {np.median(values):8.4f} "
+                        f"{np.percentile(values, 90):8.4f} {share:12.1f}%"
+                    )
             verdict = "the controller tracked the commands" if worst < 20.0 else (
                 "commands were NOT followed -- these action labels do not describe the motion"
             )
