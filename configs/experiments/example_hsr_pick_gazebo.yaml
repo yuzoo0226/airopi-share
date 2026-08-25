@@ -13,11 +13,16 @@
 # cannot find a single checkpoint. /home/checkpoints is the one path both
 # containers see.
 #
-# Budget in *steps*, not epochs. Measured on this GB10: 5.8 s/step at batch 16,
-# so an epoch of the 26,042-frame dataset (1,628 steps) costs 2.6 hours and the
-# "10 / 50 / 100 epochs" the task was originally phrased in would be 26 hours,
-# 5.5 days and 11 days. The three evaluation points below are 10k / 20k / 30k
-# steps instead: 16, 32 and 48 hours, i.e. ~6, ~12 and ~18 epochs.
+# Budget in *steps*, not epochs. Measured on this GB10: ~6.2 s/step at batch 16,
+# so an epoch of the 56,871-frame dataset (3,554 steps) costs 6.1 hours and the
+# "10 / 50 / 100 epochs" the task was originally phrased in would be 2.5, 12 and
+# 25 days. The evaluation points are 10k / 20k / 30k steps: 17, 34 and 52 hours,
+# i.e. 2.8, 5.6 and 8.4 epochs.
+#
+# For scale: the first fine-tune that reproduced its demonstrations well open
+# loop (0.30 x std) had 2.0 epochs of a 7,726-frame set. The one that did not
+# (1.06 x std, i.e. no better than predicting the mean) had 0.61 epochs of
+# 26,042 frames at almost the same step count. Epochs are what separated them.
 experiment:
   name: example_hsr_pick_gazebo
   project_name: openpi
@@ -67,19 +72,17 @@ training:
   # Measured on the GB10 (one GPU, unified memory): ~2.8 samples/s, i.e. 5.7 s
   # per step at batch 16 and 1.7 s at batch 4 - compute bound, not data bound
   # (8 dataloader workers change nothing and the 591 MB dataset is page cached).
-  # 26042 frames / 16 = 1628 steps per epoch, so one epoch takes ~2.6 hours.
+  # 56871 frames / 16 = 3554 steps per epoch, so one epoch takes ~6.1 hours.
   batch_size: 16
   num_workers: 8
   pin_memory: true
   prefetch_factor: 4
-  num_train_steps: 30000      # ~18 epochs, 48 h
+  num_train_steps: 30000      # 8.4 epochs, ~52 h
   val_split_fraction: 0.05
   val_split_seed: 42
   eval_interval: 1000
   eval_num_batches: 4
   eval_num_sample_steps: 10
-  # The checkpoint at step 1000 is the A/B against the previous run, which
-  # scored 1/19 closed loop after 966 steps on 74 fixed-head episodes.
   save_interval: 1000
   keep_period: 10000          # keep the three evaluation points permanently
   log_interval: 50
