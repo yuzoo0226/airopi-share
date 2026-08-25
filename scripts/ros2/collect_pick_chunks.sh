@@ -16,15 +16,25 @@
 #      pick_d_03     100%     100%     100%     66.7%
 #      pick_e_00     100%     100%     88.0%    64.0%
 #
-#  The failures are all the same shape -- the base stops 14 to 25 cm from the
-#  object with the arm and gripper doing exactly the right thing -- and they end
-#  in omni_base_controller emitting a garbage wheel velocity and aborting the
-#  simulator (see docs/ros2_worklog_ja.md section 6). This is not caused by load:
-#  pick_d_00 and pick_d_03 ran with nothing else on the machine, pick_e_00 ran
-#  beside a training job, and all three decay the same way.
+#  The failures are all the same shape: the base stops 14 to 25 cm from the object
+#  with the arm and gripper doing exactly the right thing. What causes it is not
+#  known. Three things have been ruled out -- machine load (pick_d_00 and
+#  pick_d_03 ran with nothing else on the machine and decay like pick_e_00, which
+#  ran beside a training job), objects accumulating on the gripper from a failed
+#  detach (the world holds six models throughout), and odometry drift (median
+#  error against ground truth is 0.0000). Four measurements still do not add up:
+#  cmd_vel keeps publishing at a steady 6.2 Hz, commanded speed falls from 0.20
+#  to 0.14 m/s as though the servo saw a *smaller* error, odometry is accurate,
+#  and yet dxy at the grasp is 0.14 to 0.25 m.
 #
-#  So keep chunks short. 50 episodes stays inside the healthy stretch on most
-#  runs and costs one extra simulator restart, about two minutes, per chunk.
+#  Do not assume this predicts the abort. pick_e_00 decayed to 59.3% and finished
+#  all 100 episodes; pick_e_01 decayed only to 89.3% and aborted at episode 97.
+#
+#  What does reproduce is where it starts: episode 69 in pick_d_00 and pick_e_00,
+#  episode 76 in pick_e_01. So keep chunks short -- 50 episodes stops before the
+#  onset, at the cost of one extra simulator restart, about two minutes, per
+#  chunk. Expect that to protect the yield, not to make the decay or the aborts
+#  go away.
 #
 #  A crash also costs one chunk instead of the whole session, and bags whose
 #  recorder did not get a clean SIGINT are repaired here, since `rosbags`
