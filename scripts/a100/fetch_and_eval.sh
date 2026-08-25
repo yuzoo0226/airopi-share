@@ -22,7 +22,13 @@ REPO_ROOT="$(cd "${HERE}/../.." && pwd)"
 
 SSH_TARGET="${A100_SSH:-yano21@150.69.197.6}"
 EXP="${EXP_NAME:-pick_a100}"
-REMOTE="\${HOME}/usr/airopi/checkpoints/_train/example_hsr_pick_gazebo/${EXP}/${STEP}"
+# Resolve the remote home once. Writing \${HOME} into the path works for ssh,
+# which runs it through a shell, and silently does not for rsync, which passes
+# the path through literally -- producing /home/yano21/${HOME}/... and an error
+# that reads as a missing checkpoint rather than a quoting bug.
+REMOTE_HOME=$(ssh -o BatchMode=yes "${SSH_TARGET}" 'echo $HOME' 2>/dev/null)
+[ -n "${REMOTE_HOME}" ] || { echo "[ERROR] cannot reach ${SSH_TARGET}"; exit 1; }
+REMOTE="${REMOTE_HOME}/usr/airopi/checkpoints/_train/example_hsr_pick_gazebo/${EXP}/${STEP}"
 LOCAL_ROOT="${CHECKPOINT_ROOT:-/home/tamhome/usr/airoa_ws/airopi_ws/checkpoints/_train/example_hsr_pick_gazebo/${EXP}}"
 # The path as the policy server container sees it.
 SERVER_PATH="/home/openpi/checkpoints/_train/example_hsr_pick_gazebo/${EXP}/${STEP}"
@@ -31,7 +37,7 @@ echo "[1/3] checking the checkpoint exists on the cluster"
 if ! ssh -o BatchMode=yes "${SSH_TARGET}" "test -d ${REMOTE} && test -d ${REMOTE}/params" 2>/dev/null; then
     echo "[ERROR] ${EXP}/${STEP} is not on the cluster yet."
     ssh -o BatchMode=yes "${SSH_TARGET}" \
-        "ls \${HOME}/usr/airopi/checkpoints/_train/example_hsr_pick_gazebo/${EXP}/ 2>/dev/null | sort -n | tr '\\n' ' '" 2>/dev/null
+        "ls ${REMOTE_HOME}/usr/airopi/checkpoints/_train/example_hsr_pick_gazebo/${EXP}/ 2>/dev/null | sort -n | tr '\\n' ' '" 2>/dev/null
     echo
     exit 1
 fi
