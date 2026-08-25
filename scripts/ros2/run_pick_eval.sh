@@ -8,9 +8,12 @@
 #           /home/openpi/checkpoints/_train/example_hsr_pick_gazebo/pick_v1/1151 \
 #           ep02 20
 #
-#  Training and the simulator cannot share this GPU: Gazebo fails to bring its
-#  controllers up while a training job is running. Stop training first
-#  (and resume it afterwards with scripts/train.py --resume).
+#  This can run while training does, as long as JAX is not preallocating. On a
+#  unified-memory machine the pool JAX takes is the same one Gazebo needs, and
+#  preallocating leaves so little that the simulator comes up without ever
+#  starting controller_manager -- every spawner times out and the run looks like
+#  it hung. docker-compose.train.yml sets XLA_PYTHON_CLIENT_PREALLOCATE=false for
+#  exactly this; check `free -g` shows tens of GB available before starting.
 #
 #  Steps:
 #    1. (re)start the simulator in the pick world
