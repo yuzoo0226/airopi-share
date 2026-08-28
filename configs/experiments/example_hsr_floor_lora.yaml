@@ -1,0 +1,152 @@
+# Fine-tune pi0.5 on real-robot teleoperation of "clean the floor" (HSR).
+#
+#   scripts/aggregate_stats_fast.py \
+#       --episodes-stats <root>/meta/episodes_stats.jsonl --chunk-dir <root>/data \
+#       --output-file assets/hsr_floor_lora/lerobot_datasets/hsr_clean_the_floor/norm_stats.json \
+#       --action-column action.relative --action-mode relative --min-std 0.01
+#   sbatch -p part_80gb scripts/a100/train_pick.sh      # EXP_NAME / CONFIG_YAML override
+#
+# The recipe below is the base checkpoint's own, read from
+# checkpoints/airoa-pi05-hsr-base/experiment_config/experiment_config.yaml rather
+# than copied from a sibling config: text tower frozen, action expert and head
+# trained in full, vision adapted through LoRA.
+#
+# DATA
+#   240 episodes from 40 teleoperation sessions, each session cut into the six
+#   primitive actions of the long-horizon task "clean the floor" -- 40 episodes
+#   per primitive, exactly balanced. 38,671 frames at 10 fps, mean 161 frames
+#   (16 s) per episode. Converted by the newer rosbag2_to_lerobot.py that also
+#   writes action.absolute / action.arm / action.gripper / action.head /
+#   action.base, so the tree carries more action columns than hsr_pens_last50.
+#
+#   Nothing is dropped. All 240 episodes have task_success and
+#   success_short_horizon_task true, has_suboptimal false, and every joint value
+#   in every episode is inside the HSR's range (STATE_LIMITS, margin 0.2). The
+#   corruption that put the Gazebo run's step-0 loss at 5e8 is absent, and so are
+#   the two failed episodes that hsr_pens_last50 needed filtered. Read the step-0
+#   loss anyway.
+#
+#   The base moves: pooled std is 0.079 on base_x and 0.440 on base_t, so
+#   base_action_dim 3 with action_mode relative is the only choice that keeps the
+#   approach rather than discarding it.
+#
+#   One normalisation std was raised to the 0.01 floor -- head_pan, whose pooled
+#   std is 0.0056. base_y looks near-zero within an episode (0.0050) but its
+#   pooled std across episodes is 0.0154, above the floor, so it is left alone.
+#   Watch that count: aggregate_stats_fast.py reported "raising 1 std value(s)",
+#   which is what an 11-dimensional action.relative in relative mode should give
+#   for this data. More than that means the column or the mode is wrong.
+#
+# BUDGET
+#   38,671 frames / batch 16 = 2,417 steps per epoch. 20,000 steps is 8.3 epochs,
+#   near the top of the 2.8-to-8.5 range the Gazebo runs found useful. At roughly
+#   4.2 s/step that is about 23 hours -- extrapolated from the cluster's measured
+#   3.79 s/step for real-camera data, scaled by this dataset's 739 KB/frame
+#   against that measurement's 616 KB/frame. Re-quote it from step 0, not from
+#   this comment.
+#
+#   keep_period 4000 leaves 4k / 8k / 12k / 16k / 20k. There is no automatic
+#   closed-loop evaluation for a real robot, so each is a checkpoint someone has
+#   to drive by hand; five is deliberate, because a discarded one cannot be
+#   recovered and val_loss will not tell you which was best.
+experiment:
+  name: example_hsr_floor_lora
+  project_name: openpi
+  seed: 42
+  wandb_enabled: false
+
+dataset:
+  repo_id: lerobot_datasets/hsr_clean_the_floor
+  data_dir: /home/datasets/lerobot_datasets/hsr_clean_the_floor
+  assets_dir: ./assets/hsr_floor_lora
+  asset_id: lerobot_datasets/hsr_clean_the_floor
+  # The prompt is the episode's own task string, i.e. one of the six primitive
+  # actions in meta/tasks.jsonl ("pick up the paper-cup", "put the sponge in the
+  # trash box", ...), 40 episodes each. This matches how the base model was
+  # trained over its 75 tasks. The long-horizon label ("clean the floor") is
+  # identical on all 240 episodes and would carry no information; the policy is
+  # commanded one primitive at a time.
+  prompt_from_task: true
+  action_mode: relative
+  fast_lerobot: true
+  lerobot_backend: parquet
+  lerobot_checks: none
+  video_backend: torchcodec
+  adapt_to_pi: true
+  convert_gripper: false
+  # action.relative is 11-dimensional: 8 joints plus base_x, base_y, base_t.
+  base_action_dim: 3
+
+model:
+  type: pi05
+  # MUST match the released checkpoint, which is per_image. Loading it into a
+  # "shared" model silently keeps only the encoder behind IMAGE_KEYS[0] -- the
+  # all-zero base_0_rgb slot -- and drops the HSR-adapted hand and head encoders.
+  image_encoder_mode: per_image
+  paligemma_variant: gemma_2b
+  action_expert_variant: gemma_300m
+  action_dim: 32
+  action_horizon: 16
+  ema_decay: 0.99
+  finetune_recipe:
+    freeze_text_tower: true
+    train_action_expert: true
+    train_action_head: true
+    vision_train_mode: lora
+    vision_lora:
+      enabled: true
+      rank: 16
+      alpha: 16.0
+      targets: [patch_embedding, attention, mlp, head]
+
+training:
+  batch_size: 16
+  # 0, not 8. openpi forces the "spawn" start method whenever num_workers > 0 and
+  # a spawned worker dies rebuilding its semaphore on the A100 cluster. openpi
+  # catches that and skips the batch, so the job sits in RUNNING at 95% GPU
+  # logging "Skipping bad batch" and trains on nothing.
+  num_workers: 0
+  pin_memory: true
+  prefetch_factor: 4
+  num_train_steps: 20000      # 8.3 epochs, ~23 h on one A100
+  val_split_fraction: 0.05
+  val_split_seed: 42
+  eval_interval: 1000
+  eval_num_batches: 4
+  eval_num_sample_steps: 10
+  save_interval: 1000
+  keep_period: 4000           # 4k / 8k / 12k / 16k / 20k survive for hand evaluation
+  log_interval: 50
+  lr_schedule:
+    type: cosine_decay
+    warmup_steps: 1000
+    peak_lr: 5.0e-5
+    decay_steps: 20000
+    decay_lr: 5.0e-6
+
+gpu:
+  num_gpus: 1
+  base_gpus: 1
+  fsdp_devices: 1
+
+scaling:
+  base_batch_size: 16
+  scale_batch_size: false
+  scale_learning_rate: false
+  scale_train_steps: false
+  workers_per_gpu: 1
+
+task_sampler:
+  kind: uniform
+  alpha: 1.0
+  ema_decay: 0.9
+  min_prob: 0.0
+  eps: 1.0e-6
+
+weight_loader:
+  type: checkpoint
+  params_path: /home/checkpoints/airoa-pi05-hsr-base/params
+
+checkpoints:
+  base_model:
+    pi05: gs://openpi-assets/checkpoints/pi05_base/params
