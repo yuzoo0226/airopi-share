@@ -1,0 +1,146 @@
+# Fine-tune pi0.5 on real-robot teleoperation of "put away the pens" (HSR hsrb022).
+#
+#   scripts/aggregate_stats_fast.py \
+#       --episodes-stats <root>/meta/episodes_stats.jsonl --chunk-dir <root>/data \
+#       --output-file assets/hsr_pens_lora/lerobot_datasets/hsr_pens_last50/norm_stats.json \
+#       --action-column action.relative --action-mode relative --min-std 0.01
+#   sbatch -p part_80gb scripts/a100/train_pick.sh      # EXP_NAME / CONFIG_YAML override
+#
+# The recipe below is the base checkpoint's own. airoa-pi05-hsr-base was trained
+# as `pi05_hsr_75tasks_fast_multinode_8nodes_vision_lora_action_full`: text tower
+# frozen, action expert and head trained in full, vision adapted through LoRA.
+# Fine-tuning with the same recipe keeps the trainable set identical to the one
+# the released weights were shaped by.
+#
+# --checkpoint-base-dir is not optional. It defaults to ./checkpoints, which is
+# the repository itself -- a directory no serving container mounts, so the run
+# trains fine and the checkpoints are then somewhere nothing looks.
+#
+# DATA
+#   199 episodes were converted from 50 teleoperation sessions ("last50"), each
+#   session cut into the four primitive actions of one long-horizon task. Two
+#   episodes carry task_success=false (and has_suboptimal=true) and are dropped:
+#   9 and 198. That leaves 197 episodes / 45,292 frames at 10 fps.
+#
+#   The drop is done in meta/ only -- those two rows are absent from
+#   episodes.jsonl and episodes_stats.jsonl and their parquet files are not
+#   linked into the tree. The remaining episode_index values keep their original
+#   numbering, so 9 and 198 are gaps. That is supported: FastLeRobotDataset maps
+#   episode_index to position itself (fast_lerobot_dataset.py:665) rather than
+#   assuming a contiguous range, and the alternative -- renumbering -- would mean
+#   rewriting the episode_index and index columns inside 27 GB of parquet whose
+#   real content is PNG frames.
+#
+#   Every joint value in all 199 episodes is inside the HSR's range, so the
+#   corruption that poisoned the Gazebo run (docs/a100_training_ja.md 5) is
+#   absent here. Read the step-0 loss anyway.
+#
+# BUDGET
+#   45,292 frames / batch 16 = 2,831 steps per epoch. 20,000 steps is 7.1 epochs
+#   and about 12.7 hours at the A100's measured 2.28 s/step. The Gazebo runs put
+#   the useful range at 2.8 to 8.5 epochs, and there is no automatic closed-loop
+#   evaluation for a real robot -- checkpoints have to be tried by hand -- so
+#   keep_period is 5000, giving four points to try rather than three.
+experiment:
+  name: example_hsr_pens_lora
+  project_name: openpi
+  seed: 42
+  wandb_enabled: false
+
+dataset:
+  repo_id: lerobot_datasets/hsr_pens_last50
+  data_dir: /home/datasets/lerobot_datasets/hsr_pens_last50
+  assets_dir: ./assets/hsr_pens_lora
+  asset_id: lerobot_datasets/hsr_pens_last50
+  # The prompt is the episode's own task string, i.e. one of the four primitive
+  # actions in meta/tasks.jsonl ("pick up the black marker", ...), 50 episodes
+  # each. This matches how the base model was trained over its 75 tasks. The
+  # long-horizon label ("put away the pens") is identical on all 199 episodes and
+  # would carry no information; the policy is commanded one primitive at a time.
+  prompt_from_task: true
+  action_mode: relative
+  fast_lerobot: true
+  lerobot_backend: parquet
+  lerobot_checks: none
+  video_backend: torchcodec
+  adapt_to_pi: true
+  convert_gripper: false
+  # action.relative is 11-dimensional: 8 joints plus base_x, base_y, base_t. The
+  # base does move in this data (base_t std 0.32 against 0.06 in Gazebo), so
+  # dropping it would discard most of the approach.
+  base_action_dim: 3
+
+model:
+  type: pi05
+  # MUST match the released checkpoint, which is per_image. Loading it into a
+  # "shared" model silently keeps only the encoder behind IMAGE_KEYS[0] -- the
+  # all-zero base_0_rgb slot -- and drops the HSR-adapted hand and head encoders.
+  image_encoder_mode: per_image
+  paligemma_variant: gemma_2b
+  action_expert_variant: gemma_300m
+  action_dim: 32
+  action_horizon: 16
+  # The base model trained with EMA; the Gazebo config left it unset.
+  ema_decay: 0.99
+  finetune_recipe:
+    freeze_text_tower: true
+    train_action_expert: true
+    train_action_head: true
+    vision_train_mode: lora
+    vision_lora:
+      enabled: true
+      rank: 16
+      alpha: 16.0
+      targets: [patch_embedding, attention, mlp, head]
+
+training:
+  batch_size: 16
+  # 0, not 8. openpi forces the "spawn" start method whenever num_workers > 0 and
+  # a spawned worker dies rebuilding its semaphore on the A100 cluster. openpi
+  # catches that and skips the batch, so the job sits in RUNNING at 95% GPU
+  # logging "Skipping bad batch" and trains on nothing.
+  num_workers: 0
+  pin_memory: true
+  prefetch_factor: 4
+  num_train_steps: 20000      # 7.1 epochs, ~12.7 h on one A100
+  val_split_fraction: 0.05
+  val_split_seed: 42
+  eval_interval: 1000
+  eval_num_batches: 4
+  eval_num_sample_steps: 10
+  save_interval: 1000
+  keep_period: 5000           # 5k / 10k / 15k / 20k survive for hand evaluation
+  log_interval: 50
+  lr_schedule:
+    type: cosine_decay
+    warmup_steps: 1000
+    peak_lr: 5.0e-5
+    decay_steps: 20000
+    decay_lr: 5.0e-6
+
+gpu:
+  num_gpus: 1
+  base_gpus: 1
+  fsdp_devices: 1
+
+scaling:
+  base_batch_size: 16
+  scale_batch_size: false
+  scale_learning_rate: false
+  scale_train_steps: false
+  workers_per_gpu: 1
+
+task_sampler:
+  kind: uniform
+  alpha: 1.0
+  ema_decay: 0.9
+  min_prob: 0.0
+  eps: 1.0e-6
+
+weight_loader:
+  type: checkpoint
+  params_path: /home/checkpoints/airoa-pi05-hsr-base/params
+
+checkpoints:
+  base_model:
+    pi05: gs://openpi-assets/checkpoints/pi05_base/params
